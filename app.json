@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Let Me Wonder",
+    "slug": "let-me-wonder",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "runtimeVersion": { "policy": "appVersion" },
+    "updates": { "checkAutomatically": "ON_LOAD", "fallbackToCacheTimeout": 0 },
+    "android": {
+      "package": "com.zeta22.letmewonder",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2f6f4f"
+      },
+      "permissions": ["android.permission.CAMERA", "android.permission.RECORD_AUDIO"],
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"]
+    },
+    "ios": {
+      "bundleIdentifier": "com.zeta22.letmewonder",
+      "supportsTablet": false
+    },
+    "plugins": [
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 140,
+          "backgroundColor": "#ffffff",
+          "dark": { "image": "./assets/splash-icon.png", "backgroundColor": "#121212" }
+        }
+      ]
+    ]
+  }
+}

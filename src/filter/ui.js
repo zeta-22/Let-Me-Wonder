@@ -22,7 +22,8 @@ function el(tag, attrs, children) {
   return node;
 }
 
-// options: { toggles, version, rulesVersion, getSettings, onChange(partial), getReport() }
+// options: { toggles, version, rulesVersion, getSettings, onChange(partial), getReport(),
+//            onGear() (optional: what the settings button does instead of opening the panel) }
 export function createUi(options) {
   const host = el('div', { id: 'lmw-ui' });
   host.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none;';
@@ -45,7 +46,7 @@ export function createUi(options) {
 
   // Settings button
   const gear = el('button', { class: 'gear', type: 'button', 'aria-label': 'Let Me Wonder settings', html: SLIDERS_ICON, hidden: '' });
-  gear.addEventListener('click', () => openPanel());
+  gear.addEventListener('click', () => (options.onGear ? options.onGear() : openPanel()));
 
   // Settings panel
   const switches = options.toggles.map((t) => ({ id: t.id, label: t.label }));

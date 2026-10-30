@@ -126,7 +126,8 @@ function start() {
     root.setAttribute('data-lmw-page', page);
     if (blocked) root.setAttribute('data-lmw-blocked', blocked.toggle);
     else root.removeAttribute('data-lmw-blocked');
-    ui.setGearVisible(host !== 'app' && settings.showGear && !NO_GEAR_PAGES.includes(page));
+    // In the app the button is the only way to its settings, so it can't be hidden there.
+    ui.setGearVisible((host === 'app' || settings.showGear) && !NO_GEAR_PAGES.includes(page));
   }
 
   // --- pages and navigation ---------------------------------------------------
@@ -150,6 +151,7 @@ function start() {
       if (blocked) hideBlocked();
     }
     applyRootState();
+    notifyHost({ type: 'page', path, allowedPath });
     scanAll();
   }
 
@@ -336,6 +338,7 @@ function start() {
     getSettings: () => ({ ...settings }),
     onChange: setSettings,
     getReport: report,
+    onGear: host === 'app' ? () => notifyHost({ type: 'openSettings' }) : undefined,
   });
 
   const style = document.createElement('style');

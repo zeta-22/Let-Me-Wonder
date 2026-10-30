@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.1.0
+// @version      0.2.0
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -362,7 +362,7 @@
     let onBack = null;
     backButton.addEventListener("click", () => onBack && onBack());
     const gear = el("button", { class: "gear", type: "button", "aria-label": "Let Me Wonder settings", html: SLIDERS_ICON, hidden: "" });
-    gear.addEventListener("click", () => openPanel());
+    gear.addEventListener("click", () => options.onGear ? options.onGear() : openPanel());
     const switches = options.toggles.map((t) => ({ id: t.id, label: t.label }));
     switches.push({ id: "showGear", label: "Show the settings button" });
     const inputs = {};
@@ -454,7 +454,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.1.0" : "dev";
+  var VERSION = true ? "0.2.0" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -541,7 +541,7 @@
       root.setAttribute("data-lmw-page", page);
       if (blocked) root.setAttribute("data-lmw-blocked", blocked.toggle);
       else root.removeAttribute("data-lmw-blocked");
-      ui.setGearVisible(host !== "app" && settings.showGear && !NO_GEAR_PAGES.includes(page));
+      ui.setGearVisible((host === "app" || settings.showGear) && !NO_GEAR_PAGES.includes(page));
     }
     function checkPath() {
       const path = location.pathname;
@@ -563,6 +563,7 @@
         if (blocked) hideBlocked();
       }
       applyRootState();
+      notifyHost({ type: "page", path, allowedPath });
       scanAll();
     }
     function onClick(e) {
@@ -721,7 +722,8 @@
       rulesVersion: RULES_VERSION,
       getSettings: () => ({ ...settings }),
       onChange: setSettings,
-      getReport: report
+      getReport: report,
+      onGear: host === "app" ? () => notifyHost({ type: "openSettings" }) : void 0
     });
     const style = document.createElement("style");
     style.id = "lmw-style";
