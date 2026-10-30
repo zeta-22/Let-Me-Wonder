@@ -3,12 +3,32 @@
 // posts, labels in several languages, a single-page router that changes the
 // address without reloading). It is not Instagram's code or layout.
 (function () {
-  const lang = new URLSearchParams(location.search).get('hl') || 'en';
+  const params = new URLSearchParams(location.search);
+  const lang = params.get('hl') || 'en';
   const words = {
-    en: { suggested: 'Suggested for you', caughtUp: 'You’re all caught up' },
-    it: { suggested: 'Suggeriti per te', caughtUp: 'Sei in pari' },
-    es: { suggested: 'Sugerencias para ti', caughtUp: 'Ya estás al día' },
+    en: { suggested: 'Suggested for you', carousel: 'Suggested for you', caughtUp: 'You’re all caught up' },
+    it: { suggested: 'Suggeriti per te', carousel: 'Consigli per te', caughtUp: 'Sei in pari' },
+    es: { suggested: 'Sugerencias para ti', carousel: 'Sugerencias para ti', caughtUp: 'Ya estás al día' },
   }[lang];
+
+  // As seen on the real site (Italian, Oct 2026): a story tray of buttons described
+  // "Storia di <name>, vista", and a "Consigli per te" carousel of accounts.
+  const storyTray = `
+    <div class="stories" data-fx="stories">
+      <a href="/stories/friend_one/">friend_one</a>
+      ${['story_anna', 'storybob', 'story_carla']
+        .map((n) => `<div role="button" aria-label="Storia di ${n}, vista"><span>${n}</span></div>`)
+        .join('')}
+    </div>`;
+  const carousel = (fx) => `
+    <div data-fx="${fx}">
+      <div><div><span>${words.carousel}</span></div><a href="/explore/people/" data-fx="${fx}-see-all">Mostra tutto</a></div>
+      <ul>
+        <li><a href="/mario_r/"><img alt="Foto di mario_r" src="data:,"></a><span>Mario Rossi</span>
+          <span>Follower: claudia.mangia</span><div role="button">Segui</div></li>
+        <li><a href="/luisa_b/"><img alt="" src="data:,"></a><span>Luisa Bianchi</span><div role="button">Segui</div></li>
+      </ul>
+    </div>`;
 
   const post = (fx, user, link, extra) => `
     <article data-fx="${fx}">
@@ -22,15 +42,16 @@
   const views = {
     home: () => `
       <main role="main"><div class="feed">
-        <div class="stories" data-fx="stories"><a href="/stories/friend_one/">friend_one</a></div>
+        ${storyTray}
         <div class="list">
-          ${post('post-normal', 'friend_one', '/p/AAA/')}
+          ${post('post-normal', 'friend_one', '/friend_one/p/AAA/')}
           <article data-fx="post-reel">
             <div class="post-head"><a href="/friend_two/">friend_two</a></div>
             <video muted playsinline></video>
-            <a href="/reel/RRR/">1 hour ago</a>
+            <a href="/friend_two/reel/RRR/">1 hour ago</a>
             <a href="/reels/audio/123/">Original audio</a>
           </article>
+          ${carousel('suggested-carousel')}
           ${post('ad-en', 'shop_brand', '/p/ADEN/', '<span>Sponsored</span>')}
           <div data-fx="suggested-accounts">
             <div><span>${words.suggested}</span><a href="/explore/people/" data-fx="see-all">See all</a></div>
@@ -94,12 +115,60 @@
         </div>
         <div data-fx="profile-grid"><a href="/p/P1/"><img alt="" src="data:,"></a><a href="/reel/P2/"><img alt="" src="data:,"></a></div>
       </div></main>`,
+    // Notifications, as on the real site: sections with headings, then a heading on its
+    // own ("Suggeriti per te") with the suggestions list as the next block.
+    notifications: () => `
+      <main role="main"><div><div class="list" data-fx="notif-list">
+        <div data-fx="notif-yesterday"><div role="heading"><span>Ieri</span></div>
+          <div><a href="/friend_one/">friend_one</a><span>ha messo Mi piace alla tua storia.</span></div></div>
+        <div data-fx="notif-week"><hr><div role="heading"><span>Questa settimana</span></div>
+          <div><a href="/friend_two/">friend_two</a><span>ha iniziato a seguirti.</span><button>Segui già</button></div></div>
+        <div data-fx="notif-sugg-heading"><h4>${words.suggested}</h4></div>
+      </div></div></main>`,
+    // An endless feed, like Instagram's: a spinner at the end loads the next batch when
+    // it comes into view (IntersectionObserver). Most batches are suggestions, which
+    // the filter hides; a friend's post only arrives in the third batch.
+    endless: () => `
+      <main role="main"><div class="feed">
+        <div class="list" data-fx="endless-list">
+          ${post('first-friend', 'friend_one', '/friend_one/p/F1/')}
+        </div>
+        <div data-fx="spinner-box"><div role="progressbar" data-fx="spinner"><svg aria-label="Caricamento..."></svg></div></div>
+      </div></main>`,
     other: () => `<main role="main"><p data-fx="other">Some other page</p></main>`,
   };
 
+  const suggestedPost = (n) =>
+    post(`sugg-${n}`, `stranger_${n}`, `/stranger_${n}/p/S${n}/`, `<div><span>${words.suggested}</span></div><button>Segui</button>`);
+  const batches = [
+    [1, 2, 3, 4].map(suggestedPost),
+    [5, 6, 7, 8].map(suggestedPost),
+    [suggestedPost(9), post('late-friend', 'friend_five', '/friend_five/p/LF/')],
+  ];
+
+  function startEndlessLoader() {
+    const list = view.querySelector('.list');
+    const box = view.querySelector('[data-fx="spinner-box"]');
+    const queue = batches.slice();
+    let loading = false;
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting) || loading || !queue.length) return;
+      loading = true;
+      setTimeout(() => {
+        list.insertAdjacentHTML('beforeend', queue.shift().join(''));
+        window.fakeBatchesLoaded = batches.length - queue.length;
+        loading = false;
+        if (!queue.length) box.remove();
+      }, 50);
+    });
+    io.observe(box.firstElementChild);
+  }
+
   function viewFor(path) {
     let m;
+    if (path === '/' && params.get('fake') === 'endless') return views.endless();
     if (path === '/') return views.home();
+    if (path === '/notifications/') return views.notifications();
     if (path === '/explore/') return views.explore();
     if (path.startsWith('/explore/search/')) return views.search();
     if (path === '/reels/') return views.reels();
@@ -129,7 +198,20 @@
 
   function render() {
     view.innerHTML = viewFor(location.pathname);
-    if (location.pathname === '/') {
+    if (view.querySelector('[data-fx="spinner-box"]')) startEndlessLoader();
+    if (location.pathname === '/notifications/') {
+      // The suggestions list arrives a moment after its heading.
+      setTimeout(() => {
+        view.querySelector('.list').insertAdjacentHTML(
+          'beforeend',
+          `<div data-fx="notif-sugg-list">
+            <div><a href="/sugg_three/">sugg_three</a><span>Follower: claudia.mangia</span><button>Segui</button></div>
+            <div><a href="/explore/people/" data-fx="notif-see-all">Vedi tutti i suggerimenti</a></div>
+          </div>`,
+        );
+      }, 60);
+    }
+    if (location.pathname === '/' && view.querySelector('[data-fx="caught-up"]')) {
       // Things Instagram adds later: more posts while scrolling, labels filled in after loading.
       setTimeout(() => {
         const list = view.querySelector('.list');

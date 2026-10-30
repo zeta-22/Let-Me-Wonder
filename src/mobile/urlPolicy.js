@@ -8,7 +8,7 @@
 //   { action: 'external', url }            open in the phone's browser / mail / phone app
 //   { action: 'ignore' }                   do nothing (e.g. "open in the Instagram app" links)
 
-import { decide } from '../filter/routes.js';
+import { decide, homeRedirect } from '../filter/routes.js';
 
 const INSTAGRAM = new Set(['instagram.com', 'www.instagram.com']);
 const LINK_SHIMS = new Set(['l.instagram.com', 'l.facebook.com', 'lm.facebook.com']);
@@ -40,7 +40,11 @@ export function decideUrl(rawUrl, { fromPath, settings }) {
     const target = url.searchParams.get('u');
     return target ? { action: 'external', url: target } : { action: 'ignore' };
   }
-  if (INSTAGRAM.has(host)) return decide(url.pathname, fromPath, settings);
+  if (INSTAGRAM.has(host)) {
+    const home = homeRedirect(url.pathname, url.search, settings);
+    if (home) return { action: 'redirect', toggle: 'followingFeed', to: home };
+    return decide(url.pathname, fromPath, settings);
+  }
   if (isInstagramSubdomain(host) || isFacebook(host)) return { action: 'allow' };
   return { action: 'external', url: rawUrl };
 }

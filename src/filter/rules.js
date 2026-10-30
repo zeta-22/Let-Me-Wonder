@@ -6,16 +6,23 @@
 
 export const RULES_VERSION = '2026.10.30';
 
-// The switches in settings, all on by default.
+// The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
 export const TOGGLES = [
-  { id: 'reelsTab', label: 'Reels tab and Reels pages', blocked: 'Reels are switched off.' },
-  { id: 'feedReels', label: 'Reels in the home feed', blocked: 'Reels are switched off.' },
-  { id: 'explore', label: 'Explore grid', blocked: 'Explore is switched off. Searching for accounts still works.' },
-  { id: 'suggested', label: 'Suggested posts and accounts', blocked: 'Suggestions are switched off.' },
-  { id: 'ads', label: 'Ads and sponsored posts', blocked: 'Ads are switched off.' },
-  { id: 'reelSwipe', label: 'Swiping to the next reel', blocked: 'You watched the reel you opened. Moving on to other reels is switched off.' },
+  { id: 'followingFeed', label: 'Home: only people you follow', default: true, blocked: '' },
+  { id: 'reelsTab', label: 'Reels tab and Reels pages', default: true, blocked: 'Reels are switched off.' },
+  // Off by default: reels from people you follow stay in the feed (suggested ones are
+  // hidden by "suggested"). Turn on to hide every reel in the home feed.
+  { id: 'feedReels', label: 'Reels in the home feed', default: false, blocked: 'Reels are switched off.' },
+  { id: 'explore', label: 'Explore grid', default: true, blocked: 'Explore is switched off. Searching for accounts still works.' },
+  { id: 'suggested', label: 'Suggested posts and accounts', default: true, blocked: 'Suggestions are switched off.' },
+  { id: 'ads', label: 'Ads and sponsored posts', default: true, blocked: 'Ads are switched off.' },
+  { id: 'reelSwipe', label: 'Swiping to the next reel', default: true, blocked: 'You watched the reel you opened. Moving on to other reels is switched off.' },
 ];
+
+// Home shows Instagram's "Following" feed (only people you follow, newest first)
+// instead of "For you". Used when Instagram is opened on "/" and when you tap Home.
+export const HOME_FEED = { toggle: 'followingFeed', param: 'variant', value: 'following' };
 
 // Kinds of page, recognised by the address path (the part after instagram.com).
 // Other rules use these names to apply only on some pages. First match wins.
@@ -51,11 +58,14 @@ export const REEL_SWIPE = { toggle: 'reelSwipe', path: '^/(?:[^/]+/)?reels?/([^/
 
 // Hidden with CSS alone: instant, nothing flashes on screen.
 // `page` limits a rule to one kind of page (see PAGES). One selector per line.
+// `collapse` keeps a 1-pixel invisible placeholder instead of removing the item, for
+// posts in an endless feed: Instagram needs to "see" them pass to load the next ones.
 export const CSS_RULES = [
   { toggle: 'reelsTab', css: ['a[href$="/reels/"]'] }, // Reels tab, also on profiles
   {
     toggle: 'feedReels',
     page: 'home',
+    collapse: true,
     css: ['article:has(a[href*="/reel/"])', 'article:has(a[href^="/reels/audio/"])'], // reel posts in the feed
   },
   { toggle: 'explore', page: 'explore', css: ['a[href*="/p/"]', 'a[href*="/reel/"]'] }, // Explore grid tiles; the search box stays
@@ -68,8 +78,8 @@ export const CSS_RULES = [
 export const LABELS = {
   sponsored: ['Sponsored', 'Sponsorizzato', 'Sponsorizzata', 'Publicidad', 'Patrocinado', 'Sponsorisé', 'Gesponsert', 'Gesponsord'],
   suggestedForYou: [
-    'Suggested for you', 'Suggeriti per te', 'Suggerimenti per te', 'Sugerencias para ti', 'Sugeridos para ti',
-    'Sugestões para você', 'Suggestions pour vous', 'Vorschläge für dich',
+    'Suggested for you', 'Suggeriti per te', 'Suggerimenti per te', 'Consigli per te', 'Sugerencias para ti',
+    'Sugeridos para ti', 'Sugestões para você', 'Suggestions pour vous', 'Vorschläge für dich',
   ],
   suggestedPosts: [
     'Suggested posts', 'Post suggeriti', 'Publicaciones sugeridas', 'Publicações sugeridas',
@@ -81,7 +91,8 @@ export const LABELS = {
 
 // What to hide when a label is found:
 //   post:  the post that contains the label (nothing if it's not inside a post)
-//   block: the whole block around the label, e.g. a "Suggested for you" carousel
+//   block: the whole block around the label, e.g. a "Suggested for you" carousel.
+//          If the label is a heading on its own, the list under it goes too.
 //   after: every post after the label in the same feed (the label itself stays)
 export const LABEL_RULES = [
   { label: 'sponsored', toggle: 'ads', hide: ['post'] },
@@ -103,6 +114,11 @@ export const APP_USER_AGENT =
 export const STRUCTURE = {
   post: 'article', // one post in a feed
   content: 'article, a[href*="/p/"], a[href*="/reel/"]', // other content: a block never grows to include it
+  heading: 'h1, h2, h3, h4, h5, h6, [role="heading"]', // a block never grows to include another heading
   boundary: 'main, [role="main"], nav, header, [role="dialog"], body', // a block never grows past or around these
+  interactive: 'a, button, [role="button"], [role="link"], input', // a block without these is "just a heading"
   maxLevels: 8, // how many levels up a block can grow from its label
+  // Instagram's "loading more" spinner at the end of a feed. If it stays on screen while
+  // everything new is hidden, the filter nudges Instagram to load the next batch.
+  loader: '[role="progressbar"]',
 };
