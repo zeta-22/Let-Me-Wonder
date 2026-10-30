@@ -1,0 +1,7 @@
+/* Let Me Wonder: page styles that don't depend on Instagram's layout.
+   Rules that do (selectors, labels) live in rules.js and are added next to this. */
+
+/* While the Blocked screen is up, the page under it is hidden. */
+html[data-lmw-blocked] body {
+  visibility: hidden !important;
+}
