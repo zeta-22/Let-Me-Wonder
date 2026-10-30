@@ -79,11 +79,10 @@ Me:
 - Publish `dist/let-me-wonder.user.js` at a public address, from the `main` branch. I open
   a pull request (PR) and you tap **Merge**.
 
-You, on GitHub (once, about 1 minute; I'll remind you when it's time):
-- Make the repo public. Open github.com/zeta-22/Let-Me-Wonder in a browser (the GitHub
-  phone app can't do this), then go to **Settings → General → Danger Zone → Change
-  visibility → Make public**.
-  - Already checked: the code holds no passwords and no personal email.
+You, on GitHub (once, about 1 minute):
+- The repo is already public, so there's nothing to change there (checked on 2026-10-30).
+- Merge the pull request (https://github.com/zeta-22/Let-Me-Wonder/pull/1) so the filter
+  appears at its permanent address on `main`.
 
 You, on iPhone (about 5 minutes, written as a step-by-step guide in `docs/IPHONE.md`):
 1. Install **Userscripts** (free) from the App Store, then turn it on in **Settings → Apps
@@ -155,7 +154,7 @@ go through the checklist (`docs/ANDROID.md`).
 ## Accounts and money
 | What | Cost | When |
 |---|---|---|
-| Make this GitHub repo public (decided: yes) | free | Stage 1 |
+| Public GitHub repo (already public, nothing to do) | free | Stage 1 |
 | Userscripts app (App Store) | free | Stage 1 |
 | Expo account plus token (decided: yes) | free (the free plan includes enough builds for this) | Stage 2 |
 | Apple Developer account | $99/year | only if you later want the iPhone app |
