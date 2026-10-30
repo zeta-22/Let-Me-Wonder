@@ -1,7 +1,7 @@
 // Decides whether an Instagram page may open. Shared by the in-page filter and
 // the Android app (which also checks addresses before loading them).
 
-import { PAGES, ROUTES, REEL_SWIPE } from './rules.js';
+import { HOME_FEED, PAGES, ROUTES, REEL_SWIPE } from './rules.js';
 
 const pages = PAGES.map((p) => ({ name: p.name, re: new RegExp(p.path) }));
 const routes = ROUTES.map((r) => ({ ...r, re: new RegExp(r.path) }));
@@ -40,4 +40,14 @@ export function decide(path, fromPath, settings, { tapped = false } = {}) {
     return { action: 'block', toggle: r.toggle };
   }
   return { action: 'allow' };
+}
+
+// Where to send a visit to the home feed ("/" with `search`, e.g. ""), so that it
+// shows the Following feed; null to leave it as it is. See HOME_FEED in rules.js.
+export function homeRedirect(path, search, settings) {
+  if (!settings[HOME_FEED.toggle] || path !== '/') return null;
+  const params = new URLSearchParams(search);
+  if (params.has(HOME_FEED.param)) return null; // already chosen (Following, or For you on purpose)
+  params.set(HOME_FEED.param, HOME_FEED.value);
+  return '/?' + params.toString();
 }

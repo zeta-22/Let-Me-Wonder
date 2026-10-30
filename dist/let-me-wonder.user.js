@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.2.0
+// @version      0.3.0
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -19,13 +19,17 @@
   // src/filter/rules.js
   var RULES_VERSION = "2026.10.30";
   var TOGGLES = [
-    { id: "reelsTab", label: "Reels tab and Reels pages", blocked: "Reels are switched off." },
-    { id: "feedReels", label: "Reels in the home feed", blocked: "Reels are switched off." },
-    { id: "explore", label: "Explore grid", blocked: "Explore is switched off. Searching for accounts still works." },
-    { id: "suggested", label: "Suggested posts and accounts", blocked: "Suggestions are switched off." },
-    { id: "ads", label: "Ads and sponsored posts", blocked: "Ads are switched off." },
-    { id: "reelSwipe", label: "Swiping to the next reel", blocked: "You watched the reel you opened. Moving on to other reels is switched off." }
+    { id: "followingFeed", label: "Home: only people you follow", default: true, blocked: "" },
+    { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
+    // Off by default: reels from people you follow stay in the feed (suggested ones are
+    // hidden by "suggested"). Turn on to hide every reel in the home feed.
+    { id: "feedReels", label: "Reels in the home feed", default: false, blocked: "Reels are switched off." },
+    { id: "explore", label: "Explore grid", default: true, blocked: "Explore is switched off. Searching for accounts still works." },
+    { id: "suggested", label: "Suggested posts and accounts", default: true, blocked: "Suggestions are switched off." },
+    { id: "ads", label: "Ads and sponsored posts", default: true, blocked: "Ads are switched off." },
+    { id: "reelSwipe", label: "Swiping to the next reel", default: true, blocked: "You watched the reel you opened. Moving on to other reels is switched off." }
   ];
+  var HOME_FEED = { toggle: "followingFeed", param: "variant", value: "following" };
   var PAGES = [
     { name: "home", path: "^/$" },
     { name: "explore", path: "^/explore/?$" },
@@ -57,6 +61,7 @@
     {
       toggle: "feedReels",
       page: "home",
+      collapse: true,
       css: ['article:has(a[href*="/reel/"])', 'article:has(a[href^="/reels/audio/"])']
       // reel posts in the feed
     },
@@ -71,6 +76,7 @@
       "Suggested for you",
       "Suggeriti per te",
       "Suggerimenti per te",
+      "Consigli per te",
       "Sugerencias para ti",
       "Sugeridos para ti",
       "Sugest\xF5es para voc\xEA",
@@ -101,10 +107,17 @@
     // one post in a feed
     content: 'article, a[href*="/p/"], a[href*="/reel/"]',
     // other content: a block never grows to include it
+    heading: 'h1, h2, h3, h4, h5, h6, [role="heading"]',
+    // a block never grows to include another heading
     boundary: 'main, [role="main"], nav, header, [role="dialog"], body',
     // a block never grows past or around these
-    maxLevels: 8
+    interactive: 'a, button, [role="button"], [role="link"], input',
+    // a block without these is "just a heading"
+    maxLevels: 8,
     // how many levels up a block can grow from its label
+    // Instagram's "loading more" spinner at the end of a feed. If it stays on screen while
+    // everything new is hidden, the filter nudges Instagram to load the next batch.
+    loader: '[role="progressbar"]'
   };
 
   // src/filter/routes.js
@@ -135,6 +148,27 @@
       return { action: "block", toggle: r.toggle };
     }
     return { action: "allow" };
+  }
+  function homeRedirect(path, search, settings) {
+    if (!settings[HOME_FEED.toggle] || path !== "/") return null;
+    const params = new URLSearchParams(search);
+    if (params.has(HOME_FEED.param)) return null;
+    params.set(HOME_FEED.param, HOME_FEED.value);
+    return "/?" + params.toString();
+  }
+
+  // src/filter/settings.js
+  function defaultSettings() {
+    const s = { showGear: true };
+    for (const t of TOGGLES) s[t.id] = t.default !== false;
+    return s;
+  }
+  function withSaved(saved) {
+    const s = defaultSettings();
+    if (saved && typeof saved === "object") {
+      for (const k of Object.keys(s)) if (typeof saved[k] === "boolean") s[k] = saved[k];
+    }
+    return s;
   }
 
   // src/filter/report.js
@@ -227,13 +261,16 @@
   function escapeRe(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
+  function looksLikeHandle(word) {
+    return word.includes("_") || /[a-z]\.[a-z]/i.test(word);
+  }
   function makeMasker(usernames) {
     const list = [...usernames].sort((a, b) => b.length - a.length).map(escapeRe);
     const re = list.length ? new RegExp("(^|[^\\w.])(" + list.join("|") + ")(?![\\w])", "gi") : null;
     return (text) => {
       let t = text.replace(/@[\w.]+/g, "@{user}");
       if (re) t = t.replace(re, "$1{user}");
-      return t;
+      return t.replace(/[\w.]{3,}/g, (word) => looksLikeHandle(word) ? "{user}" : word);
     };
   }
   function ownText(el2) {
@@ -241,13 +278,40 @@
     for (const n of el2.childNodes) if (n.nodeType === 3) t += n.data;
     return t.replace(/\s+/g, " ").trim();
   }
+  var normalize = (s) => s.replace(/[‘’]/g, "'").replace(/\s+/g, " ").trim().toLowerCase();
+  var KNOWN_LABELS = new Set(Object.values(LABELS).flat().map(normalize));
+  var UI_TEXT_ELEMENTS = 'h1, h2, h3, h4, h5, h6, [role="heading"], button, [role="button"], [role="tab"], time, abbr';
+  var ICON = 'svg, svg *, [role="img"]';
+  var words = (s) => s.split(/[\s,.;:!?()]+/).filter(Boolean);
+  function countRepeats(root) {
+    const texts = /* @__PURE__ */ new Map();
+    const ariaWords = /* @__PURE__ */ new Map();
+    for (const el2 of root.querySelectorAll("*")) {
+      const text = ownText(el2);
+      if (text && text.length <= MAX_TEXT) texts.set(text, (texts.get(text) || 0) + 1);
+      const aria = el2.getAttribute("aria-label");
+      if (aria && !el2.matches(ICON)) for (const w of words(aria)) ariaWords.set(w, (ariaWords.get(w) || 0) + 1);
+    }
+    return { texts, ariaWords };
+  }
+  function shownText(text, el2, ctx) {
+    const keep = !/[a-zA-ZÀ-ɏ]/.test(text) || KNOWN_LABELS.has(normalize(text)) || (ctx.repeats.texts.get(text) || 0) >= 2 || el2.matches(UI_TEXT_ELEMENTS);
+    return keep ? ctx.mask(text) : `\u2039${text.length} chars\u203A`;
+  }
+  function shownAria(aria, el2, ctx) {
+    const parts = words(aria);
+    if (el2.matches(ICON) || parts.length < 3) return ctx.mask(aria);
+    return ctx.mask(
+      aria.split(/(\s+|,)/).map((w) => w.trim() && w !== "," && (ctx.repeats.ariaWords.get(w) || 0) < 2 ? "{\u2026}" : w).join("")
+    );
+  }
   function describe(el2, ctx) {
     const tag = el2.tagName.toLowerCase();
     const parts = [tag];
     const role = el2.getAttribute("role");
     if (role) parts.push("role=" + role);
     const aria = el2.getAttribute("aria-label");
-    if (aria) parts.push('aria="' + ctx.mask(aria).slice(0, 60) + '"');
+    if (aria) parts.push('aria="' + shownAria(aria, el2, ctx).slice(0, 60) + '"');
     if (tag === "a" && el2.hasAttribute("href")) parts.push("href=" + redactHref(el2.getAttribute("href")));
     if (tag === "input" || tag === "button") {
       const type = el2.getAttribute("type");
@@ -262,21 +326,21 @@
     if (hidden) parts.push("{hidden:" + hidden + "}");
     if (ctx.allowText && tag !== "textarea") {
       const text = ownText(el2);
-      if (text && text.length <= MAX_TEXT) parts.push('"' + ctx.mask(text) + '"');
+      if (text && text.length <= MAX_TEXT) parts.push('"' + shownText(text, el2, ctx) + '"');
       else if (text) parts.push('"\u2026' + text.length + ' chars"');
     }
     return parts.join(" ");
   }
+  var skipped = (el2) => SKIP_TAGS.has(el2.tagName) || el2.id && el2.id.startsWith("lmw-");
   function signature(el2) {
     return el2.tagName + "|" + (el2.getAttribute("role") || "") + "|" + el2.childElementCount;
   }
   function walk(el2, depth, ctx) {
-    if (ctx.lines.length >= MAX_LINES) return;
-    if (SKIP_TAGS.has(el2.tagName) || el2.id && el2.id.startsWith("lmw-")) return;
+    if (ctx.lines.length >= MAX_LINES || skipped(el2)) return;
     const indent = "  ".repeat(depth);
     ctx.lines.push(indent + describe(el2, ctx));
     if (el2.tagName === "svg" || el2.tagName === "SVG" || depth >= MAX_DEPTH) return;
-    const kids = [...el2.children];
+    const kids = [...el2.children].filter((k) => !skipped(k));
     for (let i = 0; i < kids.length; i++) {
       const sig = signature(kids[i]);
       let run = 1;
@@ -314,7 +378,7 @@
     const head = [
       "Let Me Wonder problem report",
       `version ${version} \xB7 rules ${rulesVersion} \xB7 ${host}`,
-      `page: ${page}   path: ${redactPath(location.pathname)}`,
+      `page: ${page}   path: ${redactPath(location.pathname)}` + (new URLSearchParams(location.search).get("variant") ? `   feed: ${new URLSearchParams(location.search).get("variant")}` : ""),
       `screen: ${window.innerWidth}x${window.innerHeight}   ${navigator.userAgent}`,
       "switches: " + TOGGLES.map((t) => `${t.id}=${settings[t.id] ? "on" : "off"}`).join(" "),
       "hidden by labels: " + (Object.entries(hiddenCounts).map(([k, v]) => `${k}\xD7${v}`).join(" ") || "none"),
@@ -322,7 +386,12 @@
       ...cssMatches(),
       "---"
     ];
-    const ctx = { lines: [], mask, allowText: page !== "direct" };
+    const ctx = {
+      lines: [],
+      mask,
+      allowText: page !== "direct",
+      repeats: document.body ? countRepeats(document.body) : { texts: /* @__PURE__ */ new Map(), ariaWords: /* @__PURE__ */ new Map() }
+    };
     if (document.body) walk(document.body, 0, ctx);
     if (ctx.lines.length >= MAX_LINES) ctx.lines.push("\u2026 (cut here, page is very long)");
     return head.concat(ctx.lines).join("\n");
@@ -454,18 +523,23 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.2.0" : "dev";
+  var VERSION = true ? "0.3.0" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
+  var COLLAPSE_ATTR = "data-lmw-collapse";
   var NO_GEAR_PAGES = ["direct", "stories", "login"];
-  function normalize(text) {
+  var HIDE_CSS = "{display:none!important}";
+  var COLLAPSE_CSS = "{height:1px!important;min-height:0!important;max-height:1px!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important}";
+  var NUDGE_AFTER_MS = 1500;
+  var MAX_NUDGES = 30;
+  function normalize2(text) {
     return text.replace(/[​-‍﻿]/g, "").replace(/[‘’ʼ`´]/g, "'").replace(/\s+/g, " ").trim().replace(/[.!…]+$/, "").toLowerCase();
   }
   var labelIndex = /* @__PURE__ */ new Map();
   for (const rule of LABEL_RULES) {
     for (const text of LABELS[rule.label] || []) {
-      const key = normalize(text);
+      const key = normalize2(text);
       if (!labelIndex.has(key)) labelIndex.set(key, []);
       labelIndex.get(key).push(rule);
     }
@@ -498,10 +572,9 @@
     let navCount = 0;
     let blocked = null;
     let afterMarkers = [];
+    let sectionMarkers = [];
     const labeled = /* @__PURE__ */ new WeakSet();
     function loadSettings(fromApp) {
-      const s = { showGear: true };
-      for (const t of TOGGLES) s[t.id] = true;
       let saved = fromApp;
       if (!saved) {
         try {
@@ -510,10 +583,7 @@
           saved = null;
         }
       }
-      if (saved && typeof saved === "object") {
-        for (const k of Object.keys(s)) if (typeof saved[k] === "boolean") s[k] = saved[k];
-      }
-      return s;
+      return withSaved(saved);
     }
     function setSettings(partial) {
       for (const k of Object.keys(settings)) if (typeof partial[k] === "boolean") settings[k] = partial[k];
@@ -529,10 +599,13 @@
     }
     function buildCss() {
       const parts = [filter_default];
-      for (const t of TOGGLES) parts.push(`html[data-lmw-on~="${t.id}"] [${HIDE_ATTR2}~="${t.id}"]{display:none!important}`);
+      for (const t of TOGGLES) {
+        const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR2}~="${t.id}"]`;
+        parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, `${marked}[${COLLAPSE_ATTR}]${COLLAPSE_CSS}`);
+      }
       for (const rule of CSS_RULES) {
         const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : "");
-        for (const sel of rule.css) parts.push(`${scope} ${sel}{display:none!important}`);
+        for (const sel of rule.css) parts.push(`${scope} ${sel}${rule.collapse ? COLLAPSE_CSS : HIDE_CSS}`);
       }
       return parts.join("\n");
     }
@@ -543,17 +616,27 @@
       else root.removeAttribute("data-lmw-blocked");
       ui.setGearVisible((host === "app" || settings.showGear) && !NO_GEAR_PAGES.includes(page));
     }
+    function leaveFor(target, toggle, replace) {
+      sessionPut(FROM_PATH_KEY, allowedPath);
+      root.setAttribute("data-lmw-blocked", toggle);
+      if (replace) location.replace(target);
+      else location.assign(target);
+    }
     function checkPath() {
       const path = location.pathname;
       if (path === lastPath) return;
+      const firstCheck = lastPath === null && navCount === 0 && !allowedPath;
       if (lastPath !== null) navCount++;
       lastPath = path;
       page = pageOf(path);
+      const home = firstCheck && homeRedirect(path, location.search, settings);
+      if (home) {
+        leaveFor(home, "followingFeed", true);
+        return;
+      }
       const verdict = decide(path, allowedPath, settings);
       if (verdict.action === "redirect") {
-        sessionPut(FROM_PATH_KEY, allowedPath);
-        root.setAttribute("data-lmw-blocked", verdict.toggle);
-        location.replace(verdict.to);
+        leaveFor(verdict.to, verdict.toggle, true);
         return;
       }
       if (verdict.action === "block") {
@@ -576,20 +659,18 @@
         return;
       }
       if (url.origin !== location.origin) return;
-      const verdict = decide(url.pathname, allowedPath, settings, { tapped: true });
-      if (verdict.action === "allow") return;
+      const home = homeRedirect(url.pathname, url.search, settings);
+      const verdict = home ? null : decide(url.pathname, allowedPath, settings, { tapped: true });
+      if (verdict && verdict.action === "allow") return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (verdict.action === "redirect") {
-        sessionPut(FROM_PATH_KEY, allowedPath);
-        location.assign(verdict.to);
-      } else {
-        showBlocked(verdict.toggle, false);
-      }
+      if (home) leaveFor(home, "followingFeed", false);
+      else if (verdict.action === "redirect") leaveFor(verdict.to, verdict.toggle, false);
+      else showBlocked(verdict.toggle, false);
     }
     function messageFor(toggle) {
       const t = TOGGLES.find((x) => x.id === toggle);
-      return t ? t.blocked : "This part of Instagram is switched off.";
+      return t && t.blocked ? t.blocked : "This part of Instagram is switched off.";
     }
     function pauseMedia() {
       for (const m of document.querySelectorAll("video, audio")) {
@@ -598,6 +679,12 @@
         } catch (e) {
         }
       }
+    }
+    function onPlay(e) {
+      const media = e.target;
+      if (!media || !media.pause) return;
+      const post = media.closest && media.closest(STRUCTURE.post);
+      if (blocked || post && post.getBoundingClientRect().height <= 1) media.pause();
     }
     function showBlocked(toggle, navigated) {
       blocked = { toggle, navigated };
@@ -620,14 +707,16 @@
         location.replace("/");
       }
     }
+    function hasOutside(parent, inside, selector) {
+      for (const x of parent.querySelectorAll(selector)) if (!inside.contains(x)) return true;
+      return false;
+    }
     function mark(node, toggle) {
       if (!node || node === root || node.matches(STRUCTURE.boundary)) return;
       const current = (node.getAttribute(HIDE_ATTR2) || "").split(" ").filter(Boolean);
       if (!current.includes(toggle)) node.setAttribute(HIDE_ATTR2, current.concat(toggle).join(" "));
-    }
-    function hasOutside(parent, inside, selector) {
-      for (const x of parent.querySelectorAll(selector)) if (!inside.contains(x)) return true;
-      return false;
+      const inFeed = node.matches(STRUCTURE.post) || node.parentElement && hasOutside(node.parentElement, node, STRUCTURE.post);
+      if (inFeed) node.setAttribute(COLLAPSE_ATTR, "");
     }
     function blockAround(label) {
       const post = label.closest(STRUCTURE.post);
@@ -636,10 +725,25 @@
       for (let i = 0; i < STRUCTURE.maxLevels; i++) {
         const parent = node.parentElement;
         if (!parent || parent.matches(STRUCTURE.boundary)) break;
-        if (hasOutside(parent, node, STRUCTURE.content) || hasOutside(parent, node, STRUCTURE.boundary)) break;
+        if (hasOutside(parent, node, STRUCTURE.content) || hasOutside(parent, node, STRUCTURE.heading) || hasOutside(parent, node, STRUCTURE.boundary)) {
+          break;
+        }
         node = parent;
       }
       return node;
+    }
+    function isJustAHeading(block) {
+      return !block.matches(STRUCTURE.interactive) && !block.querySelector(STRUCTURE.interactive);
+    }
+    function hideSections() {
+      sectionMarkers = sectionMarkers.filter((m) => m.block.isConnected);
+      for (const m of sectionMarkers) {
+        for (let sib = m.block.nextElementSibling; sib; sib = sib.nextElementSibling) {
+          const stop = [STRUCTURE.heading, STRUCTURE.content].some((s) => sib.matches(s) || sib.querySelector(s));
+          if (stop) break;
+          mark(sib, m.toggle);
+        }
+      }
     }
     function feedOf(label) {
       for (let node = label.parentElement; node && node !== root; node = node.parentElement) {
@@ -663,7 +767,14 @@
       labeled.add(label);
       for (const rule of rules) {
         if (rule.hide.includes("post")) mark(label.closest(STRUCTURE.post), rule.toggle);
-        if (rule.hide.includes("block")) mark(blockAround(label), rule.toggle);
+        if (rule.hide.includes("block")) {
+          const block = blockAround(label);
+          mark(block, rule.toggle);
+          if (isJustAHeading(block)) {
+            sectionMarkers.push({ block, toggle: rule.toggle });
+            hideSections();
+          }
+        }
         if (rule.hide.includes("after")) afterMarkers.push({ label, toggle: rule.toggle, page, feed: feedOf(label) });
       }
     }
@@ -675,13 +786,13 @@
       if (!raw || raw.length > MAX_LABEL_LENGTH * 2) return;
       let el2 = textNode.parentElement;
       if (!el2) return;
-      let rules = labelIndex.get(normalize(raw));
+      let rules = labelIndex.get(normalize2(raw));
       for (let up = 0; !rules && up < 3 && el2; up++) {
         if (up > 0) el2 = el2.parentElement;
         if (!el2) return;
         const text = el2.textContent;
         if (text.length > MAX_LABEL_LENGTH * 2) return;
-        rules = labelIndex.get(normalize(text));
+        rules = labelIndex.get(normalize2(text));
       }
       if (rules && el2) applyLabel(el2, rules);
     }
@@ -695,9 +806,13 @@
       const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
       for (let t = walker.nextNode(); t; t = walker.nextNode()) checkText(t);
     }
+    function afterScan() {
+      if (afterMarkers.length) hideAfterMarkers();
+      if (sectionMarkers.length) hideSections();
+    }
     function scanAll() {
       if (document.body) scan(document.body);
-      if (afterMarkers.length) hideAfterMarkers();
+      afterScan();
     }
     function onMutations(records) {
       checkPath();
@@ -706,7 +821,49 @@
         if (r.type === "characterData") scan(r.target);
         else for (const n of r.addedNodes) scan(n);
       }
-      if (afterMarkers.length) hideAfterMarkers();
+      afterScan();
+    }
+    let spinnerSince = 0;
+    let lastVisibleCount = -1;
+    let nudges = 0;
+    function visiblePosts() {
+      let n = 0;
+      for (const post of document.querySelectorAll(STRUCTURE.post)) if (post.getBoundingClientRect().height > 1) n++;
+      return n;
+    }
+    function nudge(spinner) {
+      const box = spinner.parentElement || spinner;
+      const before = box.style.transform;
+      box.style.transform = "translateY(200000px)";
+      requestAnimationFrame(
+        () => requestAnimationFrame(() => {
+          box.style.transform = before;
+          window.dispatchEvent(new Event("scroll"));
+        })
+      );
+    }
+    function watchFeed() {
+      if (page !== "home" || blocked || document.hidden) return;
+      const count = visiblePosts();
+      if (count !== lastVisibleCount) {
+        lastVisibleCount = count;
+        spinnerSince = 0;
+        nudges = 0;
+      }
+      const spinner = document.querySelector(STRUCTURE.loader);
+      const box = spinner && spinner.getBoundingClientRect();
+      const onScreen = box && box.height > 0 && box.top < window.innerHeight && box.bottom > 0;
+      if (!onScreen) {
+        spinnerSince = 0;
+        return;
+      }
+      const now = Date.now();
+      if (!spinnerSince) spinnerSince = now;
+      if (now - spinnerSince >= NUDGE_AFTER_MS && nudges < MAX_NUDGES) {
+        nudges++;
+        spinnerSince = now;
+        nudge(spinner);
+      }
     }
     function notifyHost(message) {
       if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -733,7 +890,7 @@
     applyRootState();
     checkPath();
     window.addEventListener("click", onClick, true);
-    document.addEventListener("play", (e) => blocked && e.target.pause && e.target.pause(), true);
+    document.addEventListener("play", onPlay, true);
     window.addEventListener("popstate", checkPath);
     for (const fn of ["pushState", "replaceState"]) {
       const original = history[fn];
@@ -747,6 +904,7 @@
       }
     }
     setInterval(checkPath, 300);
+    setInterval(watchFeed, 500);
     new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
     function openFromHash() {
       if (location.hash === "#lmw" && host !== "app") {

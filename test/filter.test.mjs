@@ -5,7 +5,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  launch, open, visible, tap, path, blockedShown, blockedMessage, tapGoBack,
+  launch, open, visible, tap, path, search, blockedShown, blockedMessage, tapGoBack,
   gearShown, panelShown, tapGear, flipSwitch,
 } from './helpers.mjs';
 
@@ -17,27 +17,72 @@ after(async () => {
   await browser.close();
 });
 
-const ALL_OFF = { reelsTab: false, feedReels: false, explore: false, suggested: false, ads: false, reelSwipe: false };
+const ALL_OFF = {
+  followingFeed: false, reelsTab: false, feedReels: false, explore: false, suggested: false, ads: false, reelSwipe: false,
+};
 
 async function expectVisible(page, list, shouldBe) {
   for (const fx of list) assert.equal(await visible(page, fx), shouldBe, `${fx} should be ${shouldBe ? 'visible' : 'hidden'}`);
 }
 
-test('home feed: reels, ads and suggestions are hidden; friends’ posts stay', async () => {
+const height = (page, fx) => page.evaluate((f) => document.querySelector(`[data-fx="${f}"]`).getBoundingClientRect().height, fx);
+
+test('home feed: ads and suggestions are hidden; friends’ posts and reels stay', async () => {
   const page = await open(browser, '/');
-  await expectVisible(page, ['post-normal', 'post-normal-2', 'post-late', 'caught-up', 'stories'], true);
-  await expectVisible(page, ['post-reel', 'ad-en', 'ad-it', 'ad-es', 'ad-late', 'ad-textchange'], false);
-  await expectVisible(page, ['suggested-accounts', 'suggested-post', 'suggested-heading', 'after-1', 'after-late'], false);
+  await expectVisible(page, ['post-normal', 'post-reel', 'post-normal-2', 'post-late', 'caught-up', 'stories'], true);
+  await expectVisible(page, ['ad-en', 'ad-it', 'ad-es', 'ad-late', 'ad-textchange'], false);
+  await expectVisible(page, ['suggested-accounts', 'suggested-carousel', 'suggested-post', 'suggested-heading'], false);
+  await expectVisible(page, ['after-1', 'after-late'], false);
   assert.deepEqual(page.errors, []);
+});
+
+test('hidden posts keep a 1-pixel placeholder so the endless feed keeps loading', async () => {
+  const page = await open(browser, '/');
+  for (const fx of ['ad-en', 'suggested-post', 'suggested-carousel']) {
+    assert.equal(await height(page, fx), 1, `${fx} is collapsed, not removed`);
+  }
+  assert.equal(await height(page, 'suggested-carousel-see-all'), 0, '"Mostra tutto" link is fully hidden');
+});
+
+test('with "Reels in the home feed" on, every reel in the feed is hidden', async () => {
+  const page = await open(browser, '/', { settings: { feedReels: true } });
+  await expectVisible(page, ['post-reel'], false);
+  assert.equal(await height(page, 'post-reel'), 1);
+  await expectVisible(page, ['post-normal'], true);
 });
 
 for (const hl of ['it', 'es']) {
   test(`home feed in ${hl === 'it' ? 'Italian' : 'Spanish'}: suggestions are hidden too`, async () => {
     const page = await open(browser, `/?hl=${hl}`);
     await expectVisible(page, ['post-normal', 'caught-up'], true);
-    await expectVisible(page, ['suggested-accounts', 'suggested-post', 'after-1', 'after-late'], false);
+    await expectVisible(page, ['suggested-accounts', 'suggested-carousel', 'suggested-post', 'after-1', 'after-late'], false);
   });
 }
+
+test('Home opens the Following feed: on load, and when tapping Home', async () => {
+  const page = await open(browser, '/');
+  assert.equal(await path(page), '/');
+  assert.equal(await search(page), '?variant=following');
+  await page.evaluate(() => window.fake.navigate('/direct/inbox/'));
+  await tap(page, 'nav-home');
+  await page.waitForURL('https://www.instagram.com/?variant=following');
+  const off = await open(browser, '/', { settings: { followingFeed: false } });
+  assert.equal(await search(off), '', 'with the switch off, the normal feed stays');
+});
+
+test('endless feed: when everything new is hidden, the filter nudges Instagram to load more', async () => {
+  const page = await open(browser, '/?fake=endless&hl=it');
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForFunction(() => window.fakeBatchesLoaded === 3, null, { timeout: 15000 });
+  await expectVisible(page, ['first-friend', 'late-friend'], true);
+  await expectVisible(page, ['sugg-1', 'sugg-5', 'sugg-9'], false);
+});
+
+test('notifications stay; only the "Suggeriti per te" section under them is hidden', async () => {
+  const page = await open(browser, '/notifications/?hl=it');
+  await expectVisible(page, ['notif-list', 'notif-yesterday', 'notif-week'], true);
+  await expectVisible(page, ['notif-sugg-heading', 'notif-sugg-list', 'notif-see-all'], false);
+});
 
 test('bottom bar: Reels tab is gone, the other buttons stay', async () => {
   const page = await open(browser, '/');
@@ -78,7 +123,7 @@ test('opening /reels/ directly is blocked; Go back leads home', async () => {
   const page = await open(browser, '/reels/');
   assert.equal(await blockedShown(page), true);
   await tapGoBack(page);
-  await page.waitForURL('https://www.instagram.com/');
+  await page.waitForURL('https://www.instagram.com/?variant=following');
   await page.waitForTimeout(100);
   assert.equal(await blockedShown(page), false);
   assert.equal(await visible(page, 'post-normal'), true);
@@ -212,14 +257,23 @@ test('problem report: structure only, no usernames, no messages, never what you 
   assert.ok(!loginReport.includes('my.real.name'), 'typed username never appears');
   assert.match(loginReport, /input .*type=password/);
 
-  const home = await open(browser, '/');
+  const home = await open(browser, '/?hl=it');
   const homeReport = await home.evaluate(() => window.__LMW__.buildReport());
-  assert.match(homeReport, /page: home/);
+  assert.match(homeReport, /page: home .*feed: following/);
   assert.match(homeReport, /hidden by labels: .*ads×/);
   assert.match(homeReport, /href=\/\{user\}\//);
-  assert.match(homeReport, /href=\/p\/\{id\}\//);
-  assert.ok(!/friend_one|stranger|shop_brand/.test(homeReport), 'usernames are masked');
+  assert.match(homeReport, /href=\/\{user\}\/p\/\{id\}\//);
+  assert.ok(!/friend_one|stranger|shop_brand/.test(homeReport), 'usernames in links are masked');
   assert.ok(!homeReport.includes('lovely day at the beach'), 'captions are left out');
+  // Names that only appear as plain text (story tray, suggested accounts) are masked too.
+  for (const name of ['story_anna', 'storybob', 'story_carla', 'Mario Rossi', 'Luisa Bianchi', 'claudia.mangia', 'mario_r']) {
+    assert.ok(!homeReport.includes(name), `${name} is masked`);
+  }
+  assert.match(homeReport, /aria="Storia di \{…\}, vista"/, 'the label structure stays readable');
+  assert.match(homeReport, /"Consigli per te"/, 'known labels are kept');
+  assert.match(homeReport, /"Segui"/, 'repeated interface words are kept');
+  assert.match(homeReport, /‹\d+ chars›/, 'one-off texts become a length');
+  assert.ok(!/^body\n\s*… \d+ more/m.test(homeReport), 'skipped tags are not counted');
 
   const dm = await open(browser, '/direct/t/123/');
   const dmReport = await dm.evaluate(() => window.__LMW__.buildReport());

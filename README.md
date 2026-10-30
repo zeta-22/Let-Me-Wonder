@@ -24,20 +24,29 @@ Personal project. The full plan is in [docs/PLAN.md](docs/PLAN.md).
 
 Instagram's website is a *single-page app*: it changes pages without reloading
 and keeps adding posts as you scroll. The filter runs inside that page, from
-the moment it starts loading, and works in three layers:
+the moment it starts loading, and works in four layers:
 
 1. **CSS, instantly.** Things recognisable by their link address are hidden
-   before they're ever drawn, e.g. any link ending in `/reels/` (the Reels tab),
-   feed posts that link to a `/reel/`, and the Explore grid tiles.
+   before they're ever drawn, e.g. any link ending in `/reels/` (the Reels tab)
+   and the Explore grid tiles.
 2. **Labels, as the page changes.** A `MutationObserver` sees every change
-   Instagram makes. When a label like *Sponsored*, *Sponsorizzato* or
-   *Suggested for you* appears, the post or block around it is marked and
-   hidden. Everything after *"You're all caught up"* is hidden too.
+   Instagram makes. When a label like *Sponsored*, *Sponsorizzato*,
+   *Suggeriti per te* or *Consigli per te* appears, the post or block around it
+   is marked and hidden. A block never grows past another heading, so
+   a "Suggeriti per te" heading at the bottom of your notifications hides only
+   the list under it. Everything after *"You're all caught up"* is hidden too.
 3. **Pages.** Every address change is checked against the rules. Taps on
    blocked links are stopped. If Instagram moves to a blocked page anyway, a
    **Blocked** screen covers it, pauses any video, and offers **Go back**. On a
    single reel (e.g. one sent in DMs), moving to a *different* reel is
-   blocked: that's what stops the endless swipe.
+   blocked: that's what stops the endless swipe. Home opens Instagram's
+   **Following** feed (`/?variant=following`): only people you follow, newest
+   first.
+4. **The endless feed keeps working.** Hidden posts become an invisible 1-pixel
+   placeholder rather than disappearing, so Instagram still "sees" them scroll
+   by and loads the next ones. If its "loading" spinner sits on screen while
+   everything new is hidden, the filter nudges it to load the next batch, at
+   most 30 times in a row without a new visible post.
 
 It detects things by **stable signals** (link addresses such as `/reels/`,
 `/explore/` and `/reel/<id>`, `<article>` posts, roles, aria-labels, and label

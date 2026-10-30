@@ -10,13 +10,14 @@ import { WebView } from 'react-native-webview';
 import * as Clipboard from 'expo-clipboard';
 
 import { APP_USER_AGENT } from '../filter/rules.js';
+import { homeRedirect } from '../filter/routes.js';
 import BlockedScreen from './BlockedScreen.js';
 import SettingsScreen from './SettingsScreen.js';
 import { REPORT_SCRIPT, settingsScript, startScript } from './injected.js';
 import { useTheme } from './theme.js';
 import { decideUrl } from './urlPolicy.js';
 
-const HOME = 'https://www.instagram.com/';
+const ORIGIN = 'https://www.instagram.com';
 
 export default function InstagramScreen({ settings, onChangeSettings }) {
   const theme = useTheme();
@@ -28,6 +29,9 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
   const [blockedToggle, setBlockedToggle] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Where the app opens: the Following feed when that switch is on. Fixed at start, so
+  // changing a switch never reloads the page by itself.
+  const [startUrl] = useState(() => ORIGIN + (homeRedirect('/', '', settings) || '/'));
 
   // Used for the next page load; switch changes on the open page are sent right away below.
   const injected = useMemo(() => startScript(settings), [settings]);
@@ -110,7 +114,7 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
       <WebView
         ref={web}
         style={[styles.root, { backgroundColor: theme.bg }]}
-        source={{ uri: HOME }}
+        source={{ uri: startUrl }}
         userAgent={APP_USER_AGENT}
         injectedJavaScriptBeforeContentLoaded={injected}
         injectedJavaScript={injected}

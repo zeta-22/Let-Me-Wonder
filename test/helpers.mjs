@@ -49,11 +49,18 @@ export async function open(browser, path, { settings, app } = {}) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(BASE + path);
+  // The filter may switch "/" to the Following feed while the page loads: that's a
+  // second navigation, so wait for whichever page ends up loaded.
+  await page.goto(BASE + path).catch((e) => {
+    if (!/interrupted|ERR_ABORTED/i.test(e.message)) throw e;
+  });
+  await page.waitForLoadState('load');
   await page.waitForTimeout(150); // let the fake add its late items
   page.errors = errors;
   return page;
 }
+
+export const search = (page) => page.evaluate(() => location.search);
 
 export const visible = (page, fx) => page.locator(`[data-fx="${fx}"]`).first().isVisible();
 

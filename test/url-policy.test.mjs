@@ -6,13 +6,26 @@ import assert from 'node:assert/strict';
 
 import { decideUrl } from '../src/mobile/urlPolicy.js';
 
-const ON = { reelsTab: true, feedReels: true, explore: true, suggested: true, ads: true, reelSwipe: true };
+const ON = {
+  followingFeed: true, reelsTab: true, feedReels: true, explore: true, suggested: true, ads: true, reelSwipe: true,
+};
 const OFF = Object.fromEntries(Object.keys(ON).map((k) => [k, false]));
 const at = (url, fromPath = '/', settings = ON) => decideUrl(url, { fromPath, settings });
 
+test('the home feed opens as the Following feed', () => {
+  assert.deepEqual(at('https://www.instagram.com/'), {
+    action: 'redirect',
+    toggle: 'followingFeed',
+    to: '/?variant=following',
+  });
+  assert.deepEqual(at('https://www.instagram.com/?variant=following'), { action: 'allow' });
+  assert.deepEqual(at('https://www.instagram.com/?variant=home'), { action: 'allow' }, 'a feed chosen on purpose stays');
+  assert.deepEqual(at('https://www.instagram.com/', '/', OFF), { action: 'allow' });
+});
+
 test('normal Instagram pages load in the app', () => {
   for (const url of [
-    'https://www.instagram.com/',
+    'https://www.instagram.com/?variant=following',
     'https://www.instagram.com/direct/inbox/',
     'https://www.instagram.com/friend_one/',
     'https://www.instagram.com/p/AAA/',

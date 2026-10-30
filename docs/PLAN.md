@@ -201,8 +201,41 @@ Verified in the cloud before Part B:
 4. Start a **new session** on this repo (the token only reaches new sessions) and say
    "continue the plan, Stage 2 Part B".
 
-**Part B: new session, with the token** (creates a project on your Expo account, which you
-already approved):
+**Part B, as it actually runs (2026-10-30):** you couldn't add the token in the
+environment settings, so you pasted it in the chat and asked me to use it here, then
+merge PR #2. How I handle it:
+- **Where the token lives:** saved once to a file in my session scratch folder
+  (`…/scratchpad/expo-token`, readable only by me). It never goes in the repo, a commit
+  or a pull request, and it's passed to the Expo tool as `EXPO_TOKEN` for each command
+  without being printed.
+- **Before each commit:** I check `git status` and `git diff` so the token can't slip in.
+- **Afterwards:** a pasted token stays in the chat history, so I suggest deleting it on
+  expo.dev and making a new one when we're done. Future fixes need a valid token: either
+  in the environment settings, or pasted again in a new session.
+
+Steps, in this session:
+1. `npx eas-cli whoami`: confirms the token works (prints only your Expo username).
+2. `npx eas-cli init --non-interactive --force`: creates the "let-me-wonder" project on
+   your Expo account and writes its id and owner into `app.json`.
+3. `npx eas-cli update:configure --platform android --non-interactive`: adds the update
+   address to `app.json`.
+4. Re-run `npm test`, `expo-doctor` and `expo export`, then commit and push the `app.json`
+   changes to the branch, after checking no secret is included.
+5. `npx eas-cli build -p android --profile preview --non-interactive`, running in the
+   background. Expo generates and keeps the signing key. I get notified when it ends,
+   which takes about 10–30 minutes on the free plan's queue.
+6. **Merge PR #2** into `main` (as you asked), pinned to the commit I just pushed. This also
+   updates the iPhone filter to 0.2.0.
+7. When the build is done: give you the install page link (expo.dev build page with an
+   Install button / QR) and the direct APK link.
+8. Publish one update on the "preview" channel (`npx eas-cli update`), to confirm that
+   fixes over the internet work. The app downloads it in the background.
+9. If something fails (for example, Expo can't create the signing key without
+   questions), I stop, show you the exact error and propose the fix. I don't retry with
+   different settings on your account without telling you.
+
+**Original Part B (kept for future sessions): new session, with the token in the
+environment** (creates a project on your Expo account, which you already approved):
 1. `npx eas-cli whoami`: confirms the token works. Nothing is printed except your Expo
    username.
 2. `npx eas-cli init --non-interactive --force`: creates the "let-me-wonder" project and
@@ -218,6 +251,109 @@ already approved):
 log in, and go through `docs/CHECKLIST.md`.
 
 **STOP:** you confirm the Android app works.
+
+### Stage 3, round 1: fixes from your first two Android reports (2026-10-30)
+What the reports showed (the real logged-in page, in Italian):
+- **Notifications all hidden.** The "Suggeriti per te" heading at the bottom of the
+  notifications page made `blockAround()` grow until it hit `main`, because notifications
+  contain no post links (`STRUCTURE.content`). The whole list was marked
+  `{hidden:suggested}`.
+- **Feed stuck.**
+  - About 60 posts were loaded: about 35 reels (`article:has(a[href*="/reel/"])`) and 30
+    "Suggeriti per te" posts, overlapping.
+  - Only about 15 stayed visible, and the "Caricamento..." spinner (`role=progressbar`)
+    sat at the bottom.
+  - Hidden posts are `display:none`, so they take no space and Instagram's own
+    "load more near the end" check likely never fires again.
+- **Missed label.** "Consigli per te" (the suggested-accounts carousel; its "Mostra tutto"
+  link was hidden, but the carousel wasn't).
+- **Post addresses** are now `/{user}/p/{id}/` and `/{user}/reel/{id}/`. The current
+  rules already match these.
+- **Report privacy gap.** Names in plain text weren't masked: story usernames (in "Storia
+  di …" labels and text), display names, and "Follower: …" lines.
+- **Report cosmetic bug.** "body … 33 more like the one above" counted skipped `<script>`
+  tags as if they were shown.
+
+Fixes (all in `src/filter/`, shared by both phones):
+1. **Notifications.** Add `STRUCTURE.heading`
+   (`h1–h6, [role="heading"]`). A block never grows to include another heading. If the
+   block is *only* a heading (no links or buttons), it also hides the siblings right after
+   it, up to the next heading or content: that's the suggestions list under "Suggeriti
+   per te".
+2. **Endless feed keeps loading.**
+   - Hidden *posts* (and feed-level blocks such as carousels) are collapsed to a 1-pixel,
+     invisible placeholder instead of `display:none`. Instagram's loading logic still
+     "sees" them pass by. Other hidden things (Reels tab, Explore tiles) stay
+     `display:none`.
+   - Applies both to marked items (`data-lmw-collapse`) and to `CSS_RULES` entries flagged
+     `collapse: true` (feed reels).
+   - **Nudge:** if the loading spinner stays in view for about 1.5 s while no new visible
+     post has appeared, the filter briefly moves the spinner out of view and back, and
+     fires a scroll event. This makes Instagram check again and load the next batch.
+   - Videos inside hidden posts are paused if they start.
+3. **Labels.** Add "Consigli per te" and "Suggerimenti per te" to `suggestedForYou`.
+4. **Report.**
+   - Short texts are kept only when they're a known label, appear at least twice on the
+     page (interface words like "Segui" or "altro"), sit in a heading, button or time, or
+     contain no letters. Anything else becomes `‹N chars›`.
+   - Icon labels are kept. Other aria-labels mask words that appear only once, so "Storia
+     di silviafici, vista" becomes "Storia di {…}, vista".
+   - Handle-like words (with `_`, `.` or digits) are masked everywhere.
+   - Skipped tags are no longer counted.
+5. **Your answers (2026-10-30):**
+   - **Following feed, ON by default.** A new switch, `followingFeed` ("Home: only people
+     you follow"). `rules.js` gets
+     `HOME_FEED = { toggle: 'followingFeed', query: 'variant=following' }`, and
+     `routes.js` gets `homeRedirect(url, settings)`, which is used:
+     - **by the filter:** when a page is first opened on `/` with no `variant` (it
+       replaces the address with `/?variant=following`), and when you tap a link to `/`
+       (the Home button), which reloads into `/?variant=following`. Instagram's own
+       in-page moves to `/` are left alone, so choosing "Per te" in Instagram's menu
+       still works.
+     - **by the app:** it opens on `https://www.instagram.com/?variant=following`, and
+       `urlPolicy` turns a full load of `/` into the Following feed.
+     - If Instagram ignores `variant=following`, nothing breaks: you just get the normal
+       feed, with suggestions hidden as now.
+   - **Friends' reels are shown.** `TOGGLES` get a `default` field. "Reels in the home
+     feed" becomes **off by default**: friends' reels appear, while suggested reels stay
+     hidden by the Suggestions switch. The Reels tab and the reel-swipe block stay on.
+     - Defaults come from `TOGGLES[].default` in `filter.js` `loadSettings` and in
+       `src/mobile/settings.js`.
+     - The settings panel shows the new switch; the app settings screen gets it from
+       `TOGGLES` automatically.
+     - Saved switches are kept: if you flipped a switch before, your choice stays.
+   - **Test changes:**
+     - home-feed expectations: friends' reels visible, and opening `/` lands on
+       `/?variant=following`
+     - tapping Home from another page lands on `/?variant=following`
+     - with followingFeed off there's no redirect
+     - feedReels on hides reels with a collapsed placeholder
+     - urlPolicy: `/` becomes a redirect to the Following feed; `/?variant=following`
+       is allowed
+
+Tests (fake Instagram updated with what the reports showed):
+- **Feed:**
+  - real-style post links (`/{user}/p/`, `/{user}/reel/`) and "Suggeriti per te" inside
+    post headers
+  - the "Consigli per te" carousel with "Mostra tutto"
+  - an **endless loader driven by an IntersectionObserver on the spinner**, which serves
+    batches that are mostly hidden. The check: a friend's post from a later batch shows up
+    after scrolling to the bottom. This test fails with the old `display:none` approach
+    (that's the bug) and passes with the fix.
+- **Notifications page:** "Ieri" / "Questa settimana" sections stay visible, while the
+  "Suggeriti per te" heading, its list and "Vedi tutti i suggerimenti" are hidden.
+- **Report:** story usernames, display names and "Follower: x.y" never appear.
+- All existing checks still pass.
+
+Release:
+- Restart the branch from `main` (PR #2 is merged), and bump the version to 0.3.0.
+- Build, run `npm test`, `expo-doctor` and `expo export`, then commit and open PR #3.
+  Merge it, so the iPhone gets 0.3.0.
+- **Android update over the internet:** `npx expo export --platform android --output-dir
+  dist-app`, then `npx eas-cli update --channel preview --input-dir dist-app
+  --skip-bundler --environment preview`. (Last time `eas update` wrote into `dist/` and
+  overwrote the iPhone script folder; this avoids that.) No reinstall is needed: close
+  and reopen the app twice, or tap Settings → Check for updates.
 
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
