@@ -94,6 +94,11 @@ export const LABEL_RULES = [
 // Label rules are skipped on these pages (a friend could write "Sponsored" in a DM).
 export const LABEL_SKIP_PAGES = ['direct', 'login'];
 
+// How the Android app introduces itself to Instagram: as normal mobile Chrome, so
+// Instagram serves its regular mobile site. Update the Chrome number now and then.
+export const APP_USER_AGENT =
+  'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
+
 // How Instagram's page is built, used to find "the post" or "the block" around a label.
 export const STRUCTURE = {
   post: 'article', // one post in a feed

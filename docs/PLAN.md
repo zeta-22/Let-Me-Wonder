@@ -48,7 +48,7 @@ scripts/build-filter.mjs  Packs the three files above into:
   -> src/filter/generated/...     the copy the Android app injects
 test/                   Fake Instagram-like pages plus automatic checks, run in a headless
                         Chrome in the cloud
-App.js, src/app/...     The Android app (Expo + react-native-webview)
+App.js, src/mobile/...     The Android app (Expo + react-native-webview)
 ```
 Key design choices:
 - **Detect by stable signals, not Instagram's random class names:** link addresses
@@ -80,9 +80,12 @@ Me:
   a pull request (PR) and you tap **Merge**.
 
 You, on GitHub (once, about 1 minute):
-- The repo is already public, so there's nothing to change there (checked on 2026-10-30).
+- ~~Make the repo public~~: not needed, it's already public. Checked on 2026-10-30: GitHub
+  says "public" and the filter file downloads without logging in.
 - Merge the pull request (https://github.com/zeta-22/Let-Me-Wonder/pull/1) so the filter
   appears at its permanent address on `main`.
+- Me, small follow-up: remove the "make the repo public" line from that pull request's
+  description, and from the copy of this plan in the repo (`docs/PLAN.md`).
 
 You, on iPhone (about 5 minutes, written as a step-by-step guide in `docs/IPHONE.md`):
 1. Install **Userscripts** (free) from the App Store, then turn it on in **Settings → Apps
@@ -96,36 +99,123 @@ You, on iPhone (about 5 minutes, written as a step-by-step guide in `docs/IPHONE
 
 **STOP:** you confirm the iPhone works well enough to move on.
 
-### Stage 2: The Android app (me, then you; needs the free Expo account)
-You, once (about 5 minutes; you can do it any time before Stage 2): create an account on
-expo.dev, create an **access token**,
-and add it to this cloud environment as `EXPO_TOKEN` (environment menu in the session
-title bar → Edit → Network secrets). Never paste it in chat. Then start a new session on
-this repo and say "continue the plan, Stage 2".
+### Stage 2: The Android app (started 2026-10-30, while you test the iPhone)
+Checked on 2026-10-30: `EXPO_TOKEN` is **not** in this environment yet, and the latest
+versions are Expo SDK 58 and react-native-webview 14. PR #1 is merged, so I restart the
+branch `claude/festive-mccarthy-j93xcw` from `main` (`git checkout -B … origin/main`, then
+push with `--force-with-lease`; the branch only holds merged work).
 
-Me:
-- **The app:** a slim top bar (Back, settings gear), then Instagram filling the screen.
-  - The Android back button goes back inside Instagram.
-  - Links to other websites open in your normal browser.
-- **The filter** is injected as early as possible
-  (`injectedJavaScriptBeforeContentLoaded`). The app also blocks /reels/, Explore and
-  similar addresses itself (`onShouldStartLoadWithRequest`) and shows a friendly
-  **Blocked** screen with a Back button.
-- **Settings screen:** the 6 switches, "Report a problem" (copies the outline), "Check for
-  updates" and version info.
-- **Stay logged in:** Instagram's login cookie is kept between launches, and nothing else
-  is stored except your switch settings.
-- **Media:** photo and video pickers work for DMs and posting, and reels play.
-- **Phone browser label:** the app identifies itself to Instagram as a normal mobile
-  browser. This label is kept in `rules.js` so it can be updated.
-- **Build and updates:**
-  - Expo's cloud builds an installable Android app file (an APK).
-  - Fixes reach the app on its next launch, with no reinstalling.
-  - Expo keeps the signing key, so updates install over the old version and you stay
-    logged in.
+**Part A: me, now, no account needed.** I write the whole app and check it compiles in
+the cloud.
 
-You: open the link on your phone, allow "install unknown apps" once, install, log in, and
-go through the checklist (`docs/ANDROID.md`).
+What the app does:
+- **Full screen.** Instagram fills the screen, with no extra top bar.
+- **Settings button.** The same small round button as on iPhone. In the app it opens the
+  app's own settings screen. (Changed from the "slim top bar" above, to give Instagram
+  more room.)
+- **Back.** The Android back gesture goes back inside Instagram, closes Settings or the
+  Blocked screen, and leaves the app from the first page.
+- **Filter.** It's injected at page start (`injectedJavaScriptBeforeContentLoaded`, plus
+  `injectedJavaScript` as a backup; the filter ignores a second start). Settings are
+  passed in through `window.__LMW_CONFIG__ = { host: 'app', settings }`. A switch you
+  change takes effect immediately through `injectJavaScript(... __LMW__.setSettings ...)`.
+- **App-level blocking** (`onShouldStartLoadWithRequest`). Before any full page load,
+  the address goes through `decide()` from `src/filter/routes.js`. A blocked address
+  shows a native Blocked screen with "Go back", in the same style as Safari's.
+  - Links through Instagram's redirector (`l.instagram.com/?u=…`) and links to other
+    sites open in your phone's browser.
+  - `intent:` and "open in the Instagram app" links are ignored.
+  - Facebook login pages are allowed inside the app.
+- **Settings screen:**
+  - the 6 switches, saved on the phone
+  - Copy problem report: asks the page for the outline, then copies it to the clipboard
+  - Check for updates
+  - Reload
+  - versions of the app, filter and rules
+- **Staying logged in.** The WebView keeps cookies and storage (Android saves them to
+  disk), with third-party cookies on. The checklist verifies that you stay logged in.
+  - If it fails: in Stage 3 I add a cookie flush when the app goes to the background.
+- **Media.** The file picker for DMs and posting (camera and microphone permissions,
+  asked only when used), inline video, and full-screen video.
+- **Browser label.** `APP_USER_AGENT` in `rules.js` makes the app present itself as
+  normal mobile Chrome.
+- **Error screen.** "Can't reach Instagram" with a Retry button.
+
+Files:
+```
+package.json   + expo, react, react-native, react-native-webview, expo-updates,
+                 @react-native-async-storage/async-storage, expo-clipboard,
+                 react-native-safe-area-context, expo-status-bar
+                 (installed with `npx expo install` so the versions match SDK 58)
+app.json       name "Let Me Wonder", package com.zeta22.letmewonder, runtimeVersion
+               policy appVersion, android permissions CAMERA + RECORD_AUDIO, icon/splash
+eas.json       profile "preview": internal distribution, Android APK, channel "preview"
+index.js, App.js
+src/mobile/InstagramScreen.js   WebView, messages from the page, back handling, Blocked overlay
+src/mobile/SettingsScreen.js    switches, report, updates, versions
+src/mobile/BlockedScreen.js     native Blocked screen
+src/mobile/settings.js          load/save switches (AsyncStorage), defaults from TOGGLES
+src/mobile/urlPolicy.js         allow / block / redirect / open outside / ignore, for a URL
+src/mobile/injected.js          builds the injected script (config + filter bundle)
+src/filter/generated/filterBundle.js  generated by build-filter.mjs (committed for EAS)
+assets/icon.png, adaptive-icon.png, splash.png   a simple original leaf icon (drawn as
+               SVG, turned into PNG in the cloud browser)
+docs/ANDROID.md   install, settings, report, updates
+test/url-policy.test.mjs   checks for urlPolicy
+.gitignore     + android/, ios/, dist-app/ (generated)
+```
+
+Small filter changes (reused by both phones):
+- `filter.js`, in app mode: the settings button sends `{type:'openSettings'}` to the app.
+  On every address change the filter also tells the app `{type:'page', path,
+  allowedPath}`, which the app uses for its reel-swipe check.
+- `ui.js`: an optional `onGear` handler. Test 21 is updated to expect the button in app
+  mode and the `openSettings` message.
+- `build-filter.mjs` also writes `src/filter/generated/filterBundle.js`.
+- Bump `package.json` to 0.2.0, so Userscripts sees the change.
+
+Verified in the cloud before Part B:
+- `npm test`: the 21 filter checks, plus the new urlPolicy checks. The urlPolicy checks
+  cover:
+  - blocked pages
+  - a reel → a different reel
+  - external links and Instagram's link redirector
+  - `intent:` links
+  - Facebook login
+  - switches turned off
+- `npx expo install --check` / `npx expo-doctor`: dependencies match SDK 58.
+- `npx expo export --platform android`: the app's code compiles.
+- `npx expo prebuild --platform android --no-install` (temporary, not committed): the
+  Android settings in `app.json` are valid.
+- **Not possible in the cloud:** running the app on an Android emulator. The page filter
+  is the same code already tested; the rest is checked on your phone.
+- Commit and push, then open PR #2 into `main` (merged when you say so).
+
+**You, meanwhile (about 5 minutes, free):**
+1. Sign up at https://expo.dev/signup and confirm your email.
+2. On expo.dev, open your avatar → **Account settings → Access tokens → Create token**.
+   Name it "let-me-wonder-cloud" and copy it. You can delete it there any time.
+3. In this session's title bar, open the environment menu → **Edit** → **Network
+   secrets**, and add `EXPO_TOKEN` = the token. If that section isn't there, add it as an
+   environment variable with the same name. Never paste the token in the chat.
+4. Start a **new session** on this repo (the token only reaches new sessions) and say
+   "continue the plan, Stage 2 Part B".
+
+**Part B: new session, with the token** (creates a project on your Expo account, which you
+already approved):
+1. `npx eas-cli whoami`: confirms the token works. Nothing is printed except your Expo
+   username.
+2. `npx eas-cli init --non-interactive --force`: creates the "let-me-wonder" project and
+   writes its id into `app.json`.
+3. `npx eas-cli update:configure --non-interactive`: sets up updates over the internet.
+4. `npx eas-cli build -p android --profile preview --non-interactive`: Expo's cloud builds
+   the APK and keeps the signing key. It takes about 10–30 minutes on the free plan. I
+   follow it until it finishes, then give you the install link.
+5. Later fixes: `npx eas-cli update --channel preview --message "…"`. The app picks them
+   up the next time it opens, or right away with "Check for updates".
+
+**You:** open the link on your Android phone, allow "install unknown apps" once, install,
+log in, and go through `docs/CHECKLIST.md`.
 
 **STOP:** you confirm the Android app works.
 

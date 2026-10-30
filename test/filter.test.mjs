@@ -226,14 +226,24 @@ test('problem report: structure only, no usernames, no messages, never what you 
   assert.ok(!dmReport.includes('see you at 8'), 'DM messages are left out');
 });
 
-test('inside the Android app: no settings button, settings and reports go through the app', async () => {
-  const page = await open(browser, '/', { app: { ...ALL_OFF, ads: true } });
-  assert.equal(await gearShown(page), false);
+test('inside the Android app: settings, reports and page changes go through the app', async () => {
+  const page = await open(browser, '/', { app: { ...ALL_OFF, ads: true, showGear: false } });
   await expectVisible(page, ['ad-en'], false);
   await expectVisible(page, ['post-reel'], true);
+
+  // The settings button can't be hidden in the app (it's the way to the app's settings),
+  // and it asks the app to open its own settings screen instead of the in-page panel.
+  assert.equal(await gearShown(page), true);
+  await tapGear(page);
+  assert.equal(await panelShown(page), false);
+
   await page.evaluate(() => window.__LMW__.sendReport());
+  await page.evaluate(() => window.fake.navigate('/direct/inbox/'));
   const messages = await page.evaluate(() => window.__appMessages);
+  assert.ok(messages.some((m) => m.source === 'lmw' && m.type === 'openSettings'));
   const report = messages.find((m) => m.type === 'report');
   assert.ok(report && report.text.includes('Let Me Wonder problem report'));
+  const pages = messages.filter((m) => m.type === 'page').map((m) => m.allowedPath);
+  assert.deepEqual(pages.slice(-2), ['/', '/direct/inbox/'], 'the app hears about each page');
   assert.equal(await page.evaluate(() => localStorage.getItem('lmw-settings-v1')), null, 'the app keeps settings itself');
 });

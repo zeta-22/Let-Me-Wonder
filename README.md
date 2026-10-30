@@ -6,7 +6,8 @@ profile and the feed of people you follow keep working.
 
 - **iPhone:** Instagram in Safari, filtered by the free Userscripts add-on.
   See [docs/IPHONE.md](docs/IPHONE.md).
-- **Android:** our own app, coming in Stage 2.
+- **Android:** our own app (Expo + WebView) with the same filter built in.
+  See [docs/ANDROID.md](docs/ANDROID.md).
 
 Personal project. The full plan is in [docs/PLAN.md](docs/PLAN.md).
 
@@ -16,7 +17,7 @@ Personal project. The full plan is in [docs/PLAN.md](docs/PLAN.md).
 |---|---|---|
 | 0 | Tidy up, plan | done |
 | 1 | The filter, plus the iPhone setup (Safari + Userscripts) | built and tested in the cloud; waiting for the test on your iPhone |
-| 2 | Android app (Expo + WebView, free Expo account) | not started |
+| 2 | Android app (Expo + WebView, free Expo account) | Part A done: the app is written and compiles in the cloud. Part B (build the APK) needs the `EXPO_TOKEN` |
 | 3 | Tuning on both phones with "Report a problem" | not started |
 
 ## How it works
@@ -55,12 +56,22 @@ src/filter/routes.js    Decides if a page may open (shared with the Android app)
 src/filter/filter.js    The engine: observer, page checks, tap blocking
 src/filter/report.js    "Report a problem" outline (anonymised)
 src/filter/ui.js, *.css Blocked screen, settings button and panel
-scripts/build-filter.mjs  Builds dist/let-me-wonder.user.js
+src/filter/generated/   The built filter as the Android app injects it (don't edit)
+scripts/build-filter.mjs  Builds dist/let-me-wonder.user.js and src/filter/generated/
 dist/let-me-wonder.user.js  The built script that Userscripts installs (don't edit)
+
+App.js, index.js        The Android app's entry point
+src/mobile/InstagramScreen.js  WebView + filter, app-level page blocking, back button
+src/mobile/urlPolicy.js What to do with a full page load (allow/block/browser/ignore)
+src/mobile/SettingsScreen.js, BlockedScreen.js, settings.js, injected.js, theme.js
+app.json, eas.json      App name, Android package, permissions; Expo cloud build profile
+assets/                 Icons (made by scripts/make-icons.mjs)
+
 test/fake-instagram/    A tiny fake Instagram that copies the signals the filter uses
-test/filter.test.mjs    Automatic checks (npm test)
+test/filter.test.mjs    Automatic checks for the filter (npm test)
+test/url-policy.test.mjs  Automatic checks for the app's page rules (npm test)
 test/smoke-live.mjs     Quick check on the real, logged-out instagram.com (npm run smoke)
-docs/                   Plan, iPhone setup, phone checklist
+docs/                   Plan, iPhone and Android guides, phone checklist
 ```
 
 ## Updating the filter when Instagram changes something
@@ -90,8 +101,11 @@ Instagram changes its site often. Most fixes are a small edit to
    - Run `npm test`.
    - Raise `version` in `package.json`. Userscripts only updates when the
      version number goes up.
-   - Run `npm run build:filter` and commit, including `dist/`.
+   - Run `npm run build:filter` and commit, including `dist/` and
+     `src/filter/generated/`.
    - Merge to `main`. The iPhone gets the update automatically after a while.
+   - Android: publish it with `npx eas-cli update --channel preview --message "…"`.
+     The app picks it up the next time it opens.
 
 ## Development
 
@@ -108,3 +122,8 @@ Chrome (needs Playwright with Chromium, preinstalled in the cloud environment).
 `npm run smoke` loads the real instagram.com logged out. Instagram limits
 traffic from cloud servers, so that check can only confirm that the filter
 starts without errors.
+
+The Android app is checked in the cloud with `npx expo-doctor` and
+`npx expo export --platform android` (does the app's code compile). The installable
+APK is built in Expo's cloud with `npx eas-cli build -p android --profile preview`,
+which needs an `EXPO_TOKEN` in the environment.
