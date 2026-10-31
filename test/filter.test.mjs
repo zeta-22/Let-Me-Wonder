@@ -6,7 +6,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   launch, open, visible, tap, path, search, blockedShown, blockedMessage, tapGoBack,
-  gearShown, panelShown, tapGear, flipSwitch,
+  gearShown, panelShown, tapGear, flipSwitch, switchesLocked, lockMessage, enterCode, closePanel, TEST_CODE,
 } from './helpers.mjs';
 
 let browser;
@@ -150,6 +150,40 @@ test('without a next button, a story ad is skipped with the right-arrow key; wit
   await off.evaluate(() => window.fake.openStoryAd());
   await off.waitForTimeout(1000);
   assert.equal(await off.evaluate(() => window.fakeStoryMoves), 0);
+});
+
+// Taps the screen like a finger: on the right to go on, on the left (first third) to go back.
+async function tapStory(page, side) {
+  const width = await page.evaluate(() => window.innerWidth);
+  await page.mouse.click(side === 'left' ? width * 0.15 : width * 0.8, 400);
+}
+
+test('going back through stories, an ad is skipped backwards, to the story before it', async () => {
+  const page = await open(browser, '/');
+  await page.evaluate(() => window.fake.openStories());
+  await tapStory(page, 'right'); // friend_one -> the ad, skipped forward -> friend_two
+  await page.waitForFunction(() => window.fakeStory === 'friend_two', null, { timeout: 3000 });
+  await tapStory(page, 'left'); // friend_two -> the ad, skipped backwards -> friend_one
+  await page.waitForFunction(() => window.fakeStory === 'friend_one', null, { timeout: 3000 });
+  await page.waitForTimeout(1600);
+  assert.deepEqual(
+    await page.evaluate(() => window.fakeStoryTrail),
+    ['friend_one', 'shop_brand', 'friend_two', 'shop_brand', 'friend_one'],
+    'the ad is passed both ways, and nothing more',
+  );
+  const report = await page.evaluate(() => window.__LMW__.buildReport());
+  assert.match(report, /story ad: skipped with the next button/);
+  assert.match(report, /story ad: skipped backwards with the previous button/);
+});
+
+test('without controls, going back through an ad uses the left-arrow key', async () => {
+  const page = await open(browser, '/?storynext=none');
+  await page.evaluate(() => window.fake.openStories());
+  await tapStory(page, 'right');
+  await page.waitForFunction(() => window.fakeStory === 'friend_two', null, { timeout: 3000 });
+  await tapStory(page, 'left');
+  await page.waitForFunction(() => window.fakeStory === 'friend_one', null, { timeout: 3000 });
+  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /skipped backwards with the left-arrow key/);
 });
 
 test('a friend’s story is never skipped, even with an ad hidden in the feed underneath', async () => {
@@ -416,11 +450,31 @@ test('each switch only affects its own part', async () => {
   await expectVisible(page, ['post-reel', 'suggested-accounts', 'after-1', 'nav-reels'], true);
 });
 
+test('settings panel (Safari): the switches are locked with the code, and lock again when it closes', async () => {
+  const page = await open(browser, '/');
+  await tapGear(page);
+  assert.equal(await switchesLocked(page), true, 'locked when it opens');
+  assert.equal(await flipSwitch(page, 'ads'), true, 'a locked switch doesn’t move');
+  assert.equal(await visible(page, 'ad-en'), false);
+  await enterCode(page, '1357');
+  assert.equal(await switchesLocked(page), true);
+  assert.match(await lockMessage(page), /Wrong code/);
+  await enterCode(page, TEST_CODE);
+  assert.equal(await switchesLocked(page), false, 'the right code unlocks them');
+  await closePanel(page);
+  await tapGear(page);
+  assert.equal(await switchesLocked(page), true, 'locked again after closing');
+  const report = await page.evaluate(() => window.__LMW__.buildReport());
+  assert.match(report, /switches unlocked/);
+  assert.ok(!report.includes(TEST_CODE) && !report.includes('1357'), 'codes never go in the report');
+});
+
 test('settings panel (Safari): the button opens it, switches apply at once and are remembered', async () => {
   const page = await open(browser, '/');
   assert.equal(await gearShown(page), true);
   await tapGear(page);
   assert.equal(await panelShown(page), true);
+  await enterCode(page, TEST_CODE);
   assert.equal(await flipSwitch(page, 'ads'), false);
   assert.equal(await visible(page, 'ad-en'), true);
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('lmw-settings-v1')));

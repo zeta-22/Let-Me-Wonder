@@ -4,13 +4,20 @@
 // Needs Playwright with Chromium (preinstalled in the cloud environment).
 
 import { createRequire } from 'node:module';
+import { fingerprint } from '../src/filter/lock.js';
 import { readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('playwright');
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
-export const userscript = read('../dist/let-me-wonder.user.js');
+
+// The tests unlock the switches with a code of their own: the real code isn't in the
+// repository, so their copy of the filter gets this code's fingerprint instead.
+export const TEST_CODE = '2468';
+const built = read('../dist/let-me-wonder.user.js');
+export const userscript = built.replace(/(CODE_HASH = ")[0-9a-f]{64}"/, `$1${fingerprint(TEST_CODE)}"`);
+if (userscript === built) throw new Error('the lock fingerprint was not found in the built filter');
 const fakeApp = read('./fake-instagram/app.js');
 const fakePage = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Instagram (fake)</title></head>
@@ -90,6 +97,11 @@ export const tapGoBack = (page) => inUi(page, "root.querySelector('.blocked .pri
 export const gearShown = (page) => inUi(page, "return !root.querySelector('.gear').hidden");
 export const panelShown = (page) => inUi(page, "return !root.querySelector('.backdrop').hidden");
 export const tapGear = (page) => inUi(page, "root.querySelector('.gear').click()");
+export const switchesLocked = (page) => inUi(page, "return [...root.querySelectorAll('.toggles input')].every((i) => i.disabled)");
+export const lockMessage = (page) => inUi(page, "return root.querySelector('.lock-msg').textContent");
+export const enterCode = (page, code) =>
+  inUi(page, "root.querySelector('.code').value = arg; root.querySelector('.unlock').click()", code);
+export const closePanel = (page) => inUi(page, "root.querySelector('.close').click()");
 export const flipSwitch = (page, id) =>
   inUi(page, "const i = root.querySelector('input[data-id=\"' + arg + '\"]'); i.click(); return i.checked", id);
 

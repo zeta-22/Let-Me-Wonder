@@ -19,6 +19,7 @@ import { decide, homeRedirect, pageOf } from './routes.js';
 import { withSaved } from './settings.js';
 import { buildReport, outlineOf } from './report.js';
 import { createLog } from './log.js';
+import { createLock } from './lock.js';
 import { createUi } from './ui.js';
 import pageCss from './filter.css';
 
@@ -34,6 +35,8 @@ const BACK_FALLBACK_MS = 1500; // the back arrow didn't move Instagram this long
 const SMALL_COVER_PX = 36; // a hidden post's box with the "Small boxes" test switch on
 const STORY_RETRY_MS = 1500; // a story ad still showing this long after a skip: try again
 const STORY_MAX_TRIES = 3;
+const STORY_WAY_MS = 3000; // how long your last tap or swipe in stories says which way you're going
+const SWIPE_PX = 50;
 
 // A covered post keeps its size, so the feed keeps Instagram's own layout. Everything in
 // it is invisible and can't be tapped, and a small grey label says what was there. With
@@ -80,6 +83,7 @@ for (const rule of LABEL_RULES) {
 const MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
 const backLabels = new Set(HOME_FEED.backLabels.map(normalize));
 const nextLabels = new Set(STORIES.nextLabels.map(normalize));
+const previousLabels = new Set(STORIES.previousLabels.map(normalize));
 
 function sessionTake(key) {
   try {
@@ -543,14 +547,42 @@ function start() {
 
   // --- ads between stories -------------------------------------------------------
   // A story ad has the same "Sponsored" label as a feed ad, but no post around it. The
-  // filter pauses it and moves on to the next story with Instagram's own "next" control
-  // (STORIES.nextLabels), or else the right-arrow key, which the story viewer answers.
-  // Never with the ad's own buttons. The first time, the viewer's outline is kept for
-  // the problem report, in case Instagram changes how its stories are built.
+  // filter pauses it and moves on with Instagram's own controls (STORIES), or else the
+  // arrow keys, which the story viewer answers. Never with the ad's own buttons. It moves
+  // the way you were going: forward, or back to the story before the ad if you were
+  // going back. The first time, the viewer's outline is kept for the problem report, in
+  // case Instagram changes how its stories are built.
   const storyLabels = new Set(); // "Sponsored" labels that appeared on a story page
-  let storyAd = null; // { label, path, tries, at }: the ad being skipped
+  let storyAd = null; // { label, path, tries, at, back }: the ad being skipped
   let skipping = false;
   let storyOutlineKept = false;
+  let storyWay = { back: false, at: 0 }; // your last move in stories
+  let pointerStart = null;
+
+  // Your own taps, swipes and arrow keys in stories (not the filter's skips): a tap on the
+  // left third of the screen, a swipe to the right or the left-arrow key go back.
+  function noteWay(back) {
+    if (page === 'stories') storyWay = { back, at: Date.now() };
+  }
+  window.addEventListener('pointerdown', (e) => (pointerStart = e.isTrusted ? { x: e.clientX, y: e.clientY } : null), true);
+  window.addEventListener(
+    'pointerup',
+    (e) => {
+      if (!e.isTrusted || !pointerStart) return;
+      const dx = e.clientX - pointerStart.x;
+      const swiped = Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(e.clientY - pointerStart.y);
+      noteWay(swiped ? dx > 0 : pointerStart.x < window.innerWidth / 3);
+      pointerStart = null;
+    },
+    true,
+  );
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.isTrusted && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) noteWay(e.key === 'ArrowLeft');
+    },
+    true,
+  );
 
   function isShown(el) {
     return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
@@ -571,20 +603,27 @@ function start() {
     // later is the ad that didn't go, or a new ad reusing it (on a new address).
     const same = storyAd && storyAd.label === label;
     if (skipping || (same && now - storyAd.at < STORY_RETRY_MS)) return;
-    const tries = same && storyAd.path === location.pathname ? storyAd.tries + 1 : 1;
+    const retry = same && storyAd.path === location.pathname;
+    const tries = retry ? storyAd.tries + 1 : 1;
     if (tries > STORY_MAX_TRIES) return;
-    storyAd = { label, path: location.pathname, tries, at: now };
+    const back = retry ? storyAd.back : storyWay.back && now - storyWay.at < STORY_WAY_MS;
+    storyAd = { label, path: location.pathname, tries, at: now, back };
     if (!storyOutlineKept) {
       storyOutlineKept = true;
       log.note('the story viewer when an ad showed', outlineOf(viewerOf(label)));
     }
     pauseMedia();
-    const next = nextControl(label);
-    log.add(`story ad: skipped with ${next ? 'the next button' : 'the right-arrow key'}${tries > 1 ? `, try ${tries}` : ''}`);
+    // "Previous" is looked for next to "next", and never at the top of the screen, where
+    // an "Indietro" would be the arrow that leaves the stories.
+    const next = controlNear(nextLabels, label);
+    const control = back ? next && controlNear(previousLabels, next, { notOnTop: true }) : next;
+    const key = back ? 'ArrowLeft' : 'ArrowRight';
+    const how = control ? `the ${back ? 'previous' : 'next'} button` : `the ${back ? 'left' : 'right'}-arrow key`;
+    log.add(`story ad: skipped${back ? ' backwards' : ''} with ${how}${tries > 1 ? `, try ${tries}` : ''}`);
     skipping = true;
     try {
-      if (next) press(next);
-      else label.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, bubbles: true }));
+      if (control) press(control);
+      else label.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, keyCode: back ? 37 : 39, bubbles: true }));
     } finally {
       skipping = false;
     }
@@ -599,15 +638,17 @@ function start() {
     return node;
   }
 
-  // Instagram's "next" control closest to the label: the one sharing its deepest ancestor.
-  function nextControl(label) {
+  // The shown control with one of `labels` closest to `anchor` (sharing its deepest
+  // ancestor), outside posts.
+  function controlNear(labels, anchor, { notOnTop = false } = {}) {
     const ancestors = [];
-    for (let n = label; n; n = n.parentElement) ancestors.push(n);
+    for (let n = anchor; n; n = n.parentElement) ancestors.push(n);
     let best = null;
     let bestAt = Infinity;
     for (const el of document.querySelectorAll('[aria-label]')) {
-      if (!nextLabels.has(normalize(el.getAttribute('aria-label'))) || el.closest(STRUCTURE.post) || !isShown(el)) continue;
+      if (!labels.has(normalize(el.getAttribute('aria-label'))) || el.closest(STRUCTURE.post) || !isShown(el)) continue;
       const control = el.closest('button, [role="button"], a') || el;
+      if (control === anchor || (notOnTop && control.getBoundingClientRect().top < window.innerHeight * 0.15)) continue;
       const at = ancestors.findIndex((a) => a.contains(control));
       if (at >= 0 && at < bestAt) {
         best = control;
@@ -682,6 +723,7 @@ function start() {
   }
 
   // --- start ----------------------------------------------------------------
+  const lock = createLock();
   const ui = createUi({
     toggles: TOGGLES,
     version: VERSION,
@@ -689,6 +731,11 @@ function start() {
     getSettings: () => ({ ...settings }),
     onChange: setSettings,
     getReport: report,
+    tryCode: (code) => {
+      const result = lock.tryCode(code);
+      log.add(result.ok ? 'switches unlocked' : 'wrong code for the switches');
+      return result;
+    },
     onGear: host === 'app' ? () => notifyHost({ type: 'openSettings' }) : undefined,
   });
 
