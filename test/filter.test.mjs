@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   launch, open, visible, tap, path, search, blockedShown, blockedMessage, tapGoBack,
   gearShown, panelShown, tapGear, flipSwitch, switchesLocked, lockMessage, enterCode, closePanel, TEST_CODE,
+  viewportTag, pinch, INSTAGRAM_VIEWPORT,
 } from './helpers.mjs';
 
 let browser;
@@ -83,6 +84,21 @@ test('Instagram opens on its own home page, with the stories, and Home keeps it 
   await tap(page, 'nav-home');
   assert.equal(await path(page), '/');
   assert.equal(await search(page), '');
+});
+
+test('pinch to zoom: Instagram’s “no zoom” is relaxed, so two fingers zoom photos and stories', async () => {
+  const page = await open(browser, '/');
+  assert.equal(await viewportTag(page), 'width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover, maximum-scale=5, user-scalable=yes');
+  assert.ok((await pinch(page)) > 2, 'two fingers zoom in');
+
+  // If Instagram writes its tag again, zooming is allowed again.
+  await page.evaluate((tag) => document.querySelector('meta[name="viewport"]').setAttribute('content', tag), INSTAGRAM_VIEWPORT);
+  await page.waitForTimeout(700);
+  assert.match(await viewportTag(page), /maximum-scale=5/);
+
+  const off = await open(browser, '/', { settings: { pinchZoom: false } });
+  assert.equal(await viewportTag(off), INSTAGRAM_VIEWPORT, 'switched off, Instagram’s tag stays as it is');
+  assert.equal(await pinch(off), 1, 'and no zoom, as on Instagram');
 });
 
 test('an ad between stories is skipped with Instagram’s own next button, never the ad’s link', async () => {

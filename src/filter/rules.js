@@ -4,7 +4,7 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.10.31e';
+export const RULES_VERSION = '2026.10.31f';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
@@ -23,6 +23,8 @@ export const TOGGLES = [
   // A test, off by default: hidden posts become a small box instead of keeping their size,
   // and Instagram is asked to measure the feed again. If it doesn't, the feed jumps.
   { id: 'smallCovers', label: 'Small boxes for hidden posts (test: the feed may jump)', default: false, free: true },
+  // Instagram's page says it can't be zoomed (maximum-scale=1); this lets two fingers zoom it.
+  { id: 'pinchZoom', label: 'Pinch to zoom photos and stories', default: true, free: true },
 ];
 
 // Kinds of page, recognised by the address path (the part after instagram.com).

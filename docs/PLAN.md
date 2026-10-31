@@ -580,6 +580,25 @@ On the classic home, Instagram mixes in suggested posts: they're covered at thei
 ("Suggestion hidden"), so there can be more empty cards than on the Following feed. If
 that's too much, the Small boxes test switch is the thing to try.
 
+### Stage 3, round 8: pinch to zoom (2026-10-31)
+What you said: photos and stories can't be zoomed with two fingers, on the web too.
+
+The cause, read on the real instagram.com: its viewport tag is `width=device-width,
+initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover`, and
+`maximum-scale=1` tells the browser (and Android's WebView) not to zoom. In headless
+Chrome, a two-finger pinch stayed at zoom 1.00 with that tag and reached 2.50 with it
+relaxed. The app's WebView already allows zooming (react-native-webview turns
+`builtInZoomControls` on, without the +/- buttons), so no new APK is needed.
+
+Fix (0.3.7): a Display switch, free and on by default, "Pinch to zoom photos and
+stories". The filter rewrites only `maximum-scale` (to 5) and `user-scalable`, keeps the
+rest, does it again if Instagram rewrites its tag, and puts Instagram's tag back when the
+switch is off. A two-finger touch writes the zoom and the elements' `touch-action` in the
+report's timeline, in case something else in Instagram blocks pinching.
+
+Tests: the fake page now carries Instagram's real tag; a pinch zooms with the switch on
+(and again after Instagram rewrites its tag), not with it off. 47 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

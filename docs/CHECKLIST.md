@@ -49,6 +49,8 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Stories:** tap one in the row at the top of Home. Watch it, close it,
       and you're back where you were in the feed; open another one.
 - [ ] **Search:** find an account by name and open their profile.
+- [ ] **Pinch to zoom:** two fingers zoom a photo in the feed and a story; two
+      fingers the other way zoom back out. (Display switch "Pinch to zoom".)
 - [ ] **Your profile** opens normally.
 - [ ] **Posting:** the **+** button lets you post a photo.
 - [ ] **Notifications:** the heart shows your notifications (only the

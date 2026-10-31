@@ -19,8 +19,10 @@ const built = read('../dist/let-me-wonder.user.js');
 export const userscript = built.replace(/(CODE_HASH = ")[0-9a-f]{64}"/, `$1${fingerprint(TEST_CODE)}"`);
 if (userscript === built) throw new Error('the lock fingerprint was not found in the built filter');
 const fakeApp = read('./fake-instagram/app.js');
+// Instagram's real viewport tag (read from instagram.com, Oct 2026): it forbids zooming.
+export const INSTAGRAM_VIEWPORT = 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, viewport-fit=cover';
 const fakePage = `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Instagram (fake)</title></head>
+<meta name="viewport" content="${INSTAGRAM_VIEWPORT}"><title>Instagram (fake)</title></head>
 <body><div id="root"></div><script src="/__fake__/app.js"></script></body></html>`;
 
 export const BASE = 'https://www.instagram.com';
@@ -99,7 +101,7 @@ export const panelShown = (page) => inUi(page, "return !root.querySelector('.bac
 export const tapGear = (page) => inUi(page, "root.querySelector('.gear').click()");
 // The filters are locked; the display switches (Small boxes, Show the settings button) never are.
 export const switchesLocked = (page) =>
-  inUi(page, "const all = [...root.querySelectorAll('.toggles input')]; const free = ['smallCovers', 'showGear']; " +
+  inUi(page, "const all = [...root.querySelectorAll('.toggles input')]; const free = ['smallCovers', 'pinchZoom', 'showGear']; " +
     "return all.filter((i) => !free.includes(i.dataset.id)).every((i) => i.disabled) && all.filter((i) => free.includes(i.dataset.id)).every((i) => !i.disabled)");
 export const lockMessage = (page) => inUi(page, "return root.querySelector('.lock-msg').textContent");
 export const enterCode = (page, code) =>
@@ -109,3 +111,13 @@ export const flipSwitch = (page, id) =>
   inUi(page, "const i = root.querySelector('input[data-id=\"' + arg + '\"]'); i.click(); return i.checked", id);
 
 export const path = (page) => page.evaluate(() => location.pathname);
+
+export const viewportTag = (page) => page.evaluate(() => document.querySelector('meta[name="viewport"]').getAttribute('content'));
+
+// Pinches with two fingers (as the browser's own pinch gesture) and returns the zoom after it.
+export async function pinch(page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.synthesizePinchGesture', { x: 180, y: 300, scaleFactor: 2.5, relativeSpeed: 600 });
+  await page.waitForTimeout(300);
+  return page.evaluate(() => window.visualViewport.scale);
+}

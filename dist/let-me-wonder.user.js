@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.6
+// @version      0.3.7
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.31e";
+  var RULES_VERSION = "2026.10.31f";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
@@ -29,7 +29,9 @@
     { id: "reelSwipe", label: "Swiping to the next reel", default: true, blocked: "You watched the reel you opened. Moving on to other reels is switched off." },
     // A test, off by default: hidden posts become a small box instead of keeping their size,
     // and Instagram is asked to measure the feed again. If it doesn't, the feed jumps.
-    { id: "smallCovers", label: "Small boxes for hidden posts (test: the feed may jump)", default: false, free: true }
+    { id: "smallCovers", label: "Small boxes for hidden posts (test: the feed may jump)", default: false, free: true },
+    // Instagram's page says it can't be zoomed (maximum-scale=1); this lets two fingers zoom it.
+    { id: "pinchZoom", label: "Pinch to zoom photos and stories", default: true, free: true }
   ];
   var PAGES = [
     { name: "home", path: "^/$" },
@@ -724,7 +726,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.6" : "dev";
+  var VERSION = true ? "0.3.7" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -820,6 +822,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         }
       }
       applyRootState();
+      fixViewport();
       if (resized) remeasure(true);
       lastPath = null;
       checkPath();
@@ -1116,6 +1119,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         }
       }
       afterScan();
+      fixViewport();
       remeasure();
       if (added.size || removed.size) {
         const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(" ");
@@ -1215,6 +1219,43 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       if (el2 instanceof HTMLElement) el2.click();
       else el2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     }
+    const ZOOM_MAX = 5;
+    let viewportOwn = null;
+    let viewportSet = null;
+    let pinchLoggedAt = 0;
+    function zoomable(content) {
+      const kept = content.split(",").map((p) => p.trim()).filter((p) => p && !/^(maximum-scale|user-scalable)\s*=/i.test(p));
+      return kept.concat(`maximum-scale=${ZOOM_MAX}`, "user-scalable=yes").join(", ");
+    }
+    function fixViewport() {
+      const meta = document.querySelector('meta[name="viewport"]');
+      if (!meta) return;
+      const content = meta.getAttribute("content") || "";
+      if (content !== viewportSet) viewportOwn = content;
+      const wanted = settings.pinchZoom ? zoomable(viewportOwn) : viewportOwn;
+      if (content !== wanted) {
+        meta.setAttribute("content", wanted);
+        log.add(settings.pinchZoom ? "pinch to zoom: allowed" : "pinch to zoom: Instagram's setting back");
+      }
+      viewportSet = wanted;
+    }
+    window.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!e.isTrusted || e.touches.length !== 2 || Date.now() - pinchLoggedAt < 1e4) return;
+        pinchLoggedAt = Date.now();
+        const ways = [];
+        for (let n = e.target; n && n.nodeType === 1; n = n.parentElement) {
+          const way = getComputedStyle(n).touchAction;
+          if (way !== "auto") ways.push(`${n.tagName.toLowerCase()} ${way}`);
+        }
+        setTimeout(() => {
+          const zoom = window.visualViewport ? window.visualViewport.scale.toFixed(2) : "?";
+          log.add(`two fingers: zoom ${zoom}, touch-action ${ways.join(", ") || "auto"}`);
+        }, 800);
+      },
+      { capture: true, passive: true }
+    );
     function watchFeed() {
       if (page !== "home" || blocked || document.hidden) return;
       const post = document.querySelector(STRUCTURE.post);
@@ -1301,6 +1342,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     setInterval(checkPath, 300);
     setInterval(watchFeed, 500);
     setInterval(checkStoryAds, 400);
+    setInterval(fixViewport, 500);
     new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
     function openFromHash() {
       if (location.hash === "#lmw" && host !== "app") {

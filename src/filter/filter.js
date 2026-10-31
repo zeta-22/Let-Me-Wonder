@@ -148,6 +148,7 @@ function start() {
       }
     }
     applyRootState();
+    fixViewport();
     if (resized) remeasure(true); // hidden posts just changed size, both ways
     lastPath = null; // re-check the current page with the new switches
     checkPath();
@@ -503,6 +504,7 @@ function start() {
       }
     }
     afterScan();
+    fixViewport(); // as soon as Instagram's tag is in the page
     remeasure();
     if (added.size || removed.size) {
       const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(' ');
@@ -628,6 +630,57 @@ function start() {
     else el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   }
 
+  // --- pinch to zoom ----------------------------------------------------------------
+  // Instagram's page tells the browser it can't be zoomed (maximum-scale=1 in its viewport
+  // tag). With "Pinch to zoom" on, two fingers zoom photos and stories up to ZOOM_MAX
+  // times, like on any web page. The rest of Instagram's tag is kept, it's fixed again if
+  // Instagram rewrites it, and it's put back as it was when the switch is off.
+  const ZOOM_MAX = 5;
+  let viewportOwn = null; // the page's own viewport setting
+  let viewportSet = null; // the one the filter last wrote
+  let pinchLoggedAt = 0;
+
+  function zoomable(content) {
+    const kept = content
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p && !/^(maximum-scale|user-scalable)\s*=/i.test(p));
+    return kept.concat(`maximum-scale=${ZOOM_MAX}`, 'user-scalable=yes').join(', ');
+  }
+
+  function fixViewport() {
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) return;
+    const content = meta.getAttribute('content') || '';
+    if (content !== viewportSet) viewportOwn = content; // Instagram set it (again)
+    const wanted = settings.pinchZoom ? zoomable(viewportOwn) : viewportOwn;
+    if (content !== wanted) {
+      meta.setAttribute('content', wanted);
+      log.add(settings.pinchZoom ? 'pinch to zoom: allowed' : "pinch to zoom: Instagram's setting back");
+    }
+    viewportSet = wanted;
+  }
+
+  // For the report: how far a two-finger touch zoomed, and what on the way up says how
+  // touches may be used (in case something else in Instagram blocks pinching).
+  window.addEventListener(
+    'touchstart',
+    (e) => {
+      if (!e.isTrusted || e.touches.length !== 2 || Date.now() - pinchLoggedAt < 10000) return;
+      pinchLoggedAt = Date.now();
+      const ways = [];
+      for (let n = e.target; n && n.nodeType === 1; n = n.parentElement) {
+        const way = getComputedStyle(n).touchAction;
+        if (way !== 'auto') ways.push(`${n.tagName.toLowerCase()} ${way}`);
+      }
+      setTimeout(() => {
+        const zoom = window.visualViewport ? window.visualViewport.scale.toFixed(2) : '?';
+        log.add(`two fingers: zoom ${zoom}, touch-action ${ways.join(', ') || 'auto'}`);
+      }, 800);
+    },
+    { capture: true, passive: true },
+  );
+
   // --- the feed, for the report's timeline ---------------------------------------
   // Only looks: the page's height and the padding of the list holding the posts.
   function watchFeed() {
@@ -734,6 +787,7 @@ function start() {
   setInterval(checkPath, 300);
   setInterval(watchFeed, 500);
   setInterval(checkStoryAds, 400); // an ad still showing after a skip, or the next one
+  setInterval(fixViewport, 500); // in case Instagram changes its viewport tag without adding nodes
   new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
 
   function openFromHash() {
