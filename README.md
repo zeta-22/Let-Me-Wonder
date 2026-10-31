@@ -44,9 +44,14 @@ the moment it starts loading, and works in four layers:
    first.
 4. **The endless feed keeps working.** Hidden posts become an invisible 1-pixel
    placeholder rather than disappearing, so Instagram still "sees" them scroll
-   by and loads the next ones. If its "loading" spinner sits on screen while
-   everything new is hidden, the filter nudges it to load the next batch, at
-   most 30 times in a row without a new visible post.
+   by and loads the next ones. What's inside a placeholder isn't drawn at all,
+   so a hidden reel can't play or load its video. If a batch arrives with
+   everything in it hidden and the "loading" spinner stays on screen, the filter
+   nudges Instagram to load the next one. That's once per batch, after it has
+   arrived, not while it's still on its way (that can make Instagram fetch the
+   same posts twice). With nothing arriving at all, it tries again every 10 s, at
+   most 30 times in a row without a new visible post. On the Following
+   feed, Home and the back arrow scroll back to the top instead of reloading it.
 
 It detects things by **stable signals** (link addresses such as `/reels/`,
 `/explore/` and `/reel/<id>`, `<article>` posts, roles, aria-labels, and label
@@ -70,7 +75,7 @@ scripts/build-filter.mjs  Builds dist/let-me-wonder.user.js and src/filter/gener
 dist/let-me-wonder.user.js  The built script that Userscripts installs (don't edit)
 
 App.js, index.js        The Android app's entry point
-src/mobile/InstagramScreen.js  WebView + filter, app-level page blocking, back button
+src/mobile/InstagramScreen.js  WebView + filter, app-level page blocking, back button, restart after a page crash
 src/mobile/urlPolicy.js What to do with a full page load (allow/block/browser/ignore)
 src/mobile/SettingsScreen.js, BlockedScreen.js, settings.js, injected.js, theme.js
 app.json, eas.json      App name, Android package, permissions; Expo cloud build profile

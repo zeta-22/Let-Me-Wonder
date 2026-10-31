@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.0
+// @version      0.3.1
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -523,7 +523,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.0" : "dev";
+  var VERSION = true ? "0.3.1" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -532,6 +532,7 @@
   var HIDE_CSS = "{display:none!important}";
   var COLLAPSE_CSS = "{height:1px!important;min-height:0!important;max-height:1px!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important}";
   var NUDGE_AFTER_MS = 1500;
+  var NUDGE_FALLBACK_MS = 1e4;
   var MAX_NUDGES = 30;
   function normalize2(text) {
     return text.replace(/[​-‍﻿]/g, "").replace(/[‘’ʼ`´]/g, "'").replace(/\s+/g, " ").trim().replace(/[.!…]+$/, "").toLowerCase();
@@ -597,15 +598,19 @@
       lastPath = null;
       checkPath();
     }
+    function collapseCss(sel) {
+      return `${sel}${COLLAPSE_CSS}
+${sel} > *${HIDE_CSS}`;
+    }
     function buildCss() {
       const parts = [filter_default];
       for (const t of TOGGLES) {
         const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR2}~="${t.id}"]`;
-        parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, `${marked}[${COLLAPSE_ATTR}]${COLLAPSE_CSS}`);
+        parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, collapseCss(`${marked}[${COLLAPSE_ATTR}]`));
       }
       for (const rule of CSS_RULES) {
         const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : "");
-        for (const sel of rule.css) parts.push(`${scope} ${sel}${rule.collapse ? COLLAPSE_CSS : HIDE_CSS}`);
+        for (const sel of rule.css) parts.push(rule.collapse ? collapseCss(`${scope} ${sel}`) : `${scope} ${sel}${HIDE_CSS}`);
       }
       return parts.join("\n");
     }
@@ -649,6 +654,9 @@
       notifyHost({ type: "page", path, allowedPath });
       scanAll();
     }
+    function onHomeFeed() {
+      return page === "home" && new URLSearchParams(location.search).get(HOME_FEED.param) === HOME_FEED.value;
+    }
     function onClick(e) {
       const link = e.target && e.target.closest ? e.target.closest("a[href]") : null;
       if (!link) return;
@@ -664,7 +672,8 @@
       if (verdict && verdict.action === "allow") return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (home) leaveFor(home, "followingFeed", false);
+      if (home && onHomeFeed()) window.scrollTo({ top: 0, behavior: "smooth" });
+      else if (home) leaveFor(home, "followingFeed", false);
       else if (verdict.action === "redirect") leaveFor(verdict.to, verdict.toggle, false);
       else showBlocked(verdict.toggle, false);
     }
@@ -814,27 +823,41 @@
       if (document.body) scan(document.body);
       afterScan();
     }
+    function hasPost(node) {
+      return node.nodeType === 1 && (node.matches(STRUCTURE.post) || !!node.querySelector(STRUCTURE.post));
+    }
     function onMutations(records) {
       checkPath();
       if (root.getAttribute("data-lmw-on") === null) applyRootState();
+      let postsAdded = false;
       for (const r of records) {
         if (r.type === "characterData") scan(r.target);
-        else for (const n of r.addedNodes) scan(n);
+        else {
+          for (const n of r.addedNodes) {
+            scan(n);
+            if (!postsAdded && page === "home" && hasPost(n)) postsAdded = true;
+          }
+        }
       }
       afterScan();
+      if (postsAdded) watchFeed();
     }
+    let spinnerEl = null;
     let spinnerSince = 0;
+    let feedLength = 0;
+    let stuckSince = 0;
+    let nudgedAt = 0;
     let lastVisibleCount = -1;
     let nudges = 0;
-    function visiblePosts() {
+    function visibleCount(posts) {
       let n = 0;
-      for (const post of document.querySelectorAll(STRUCTURE.post)) if (post.getBoundingClientRect().height > 1) n++;
+      for (const post of posts) if (post.getBoundingClientRect().height > 1) n++;
       return n;
     }
     function nudge(spinner) {
       const box = spinner.parentElement || spinner;
       const before = box.style.transform;
-      box.style.transform = "translateY(200000px)";
+      box.style.transform = "translateY(-200000px)";
       requestAnimationFrame(
         () => requestAnimationFrame(() => {
           box.style.transform = before;
@@ -844,24 +867,35 @@
     }
     function watchFeed() {
       if (page !== "home" || blocked || document.hidden) return;
-      const count = visiblePosts();
+      const posts = document.querySelectorAll(STRUCTURE.post);
+      const count = visibleCount(posts);
       if (count !== lastVisibleCount) {
         lastVisibleCount = count;
-        spinnerSince = 0;
         nudges = 0;
       }
       const spinner = document.querySelector(STRUCTURE.loader);
       const box = spinner && spinner.getBoundingClientRect();
       const onScreen = box && box.height > 0 && box.top < window.innerHeight && box.bottom > 0;
+      const sameSpinner = spinner === spinnerEl;
+      const arrived = sameSpinner && posts.length > feedLength;
+      spinnerEl = spinner;
+      feedLength = posts.length;
       if (!onScreen) {
         spinnerSince = 0;
+        stuckSince = 0;
         return;
       }
       const now = Date.now();
-      if (!spinnerSince) spinnerSince = now;
-      if (now - spinnerSince >= NUDGE_AFTER_MS && nudges < MAX_NUDGES) {
-        nudges++;
+      if (!sameSpinner || !spinnerSince) {
         spinnerSince = now;
+        stuckSince = 0;
+      }
+      if (arrived) stuckSince = now;
+      const due = stuckSince ? now - stuckSince >= NUDGE_AFTER_MS : now - Math.max(spinnerSince, nudgedAt) >= NUDGE_FALLBACK_MS;
+      if (due && nudges < MAX_NUDGES) {
+        nudges++;
+        nudgedAt = now;
+        stuckSince = 0;
         nudge(spinner);
       }
     }

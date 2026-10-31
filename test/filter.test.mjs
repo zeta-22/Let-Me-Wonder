@@ -48,6 +48,8 @@ test('with "Reels in the home feed" on, every reel in the feed is hidden', async
   const page = await open(browser, '/', { settings: { feedReels: true } });
   await expectVisible(page, ['post-reel'], false);
   assert.equal(await height(page, 'post-reel'), 1);
+  const video = await page.evaluate(() => document.querySelector('[data-fx="post-reel"] video').getBoundingClientRect().height);
+  assert.equal(video, 0, 'the hidden reel’s video takes no space, so it can’t autoplay');
   await expectVisible(page, ['post-normal'], true);
 });
 
@@ -70,12 +72,40 @@ test('Home opens the Following feed: on load, and when tapping Home', async () =
   assert.equal(await search(off), '', 'with the switch off, the normal feed stays');
 });
 
+test('Home on the Following feed goes back to the top instead of reloading it', async () => {
+  const page = await open(browser, '/');
+  await page.evaluate(() => {
+    window.notReloaded = true;
+    document.body.style.paddingBottom = '3000px';
+    window.scrollTo(0, 1500);
+  });
+  const entries = await page.evaluate(() => history.length);
+  await tap(page, 'nav-home');
+  await page.waitForFunction(() => window.scrollY === 0);
+  assert.equal(await page.evaluate(() => window.notReloaded), true, 'the page was not reloaded');
+  assert.equal(await page.evaluate(() => history.length), entries, 'no extra copy of the feed to go Back through');
+  assert.equal(await search(page), '?variant=following');
+});
+
 test('endless feed: when everything new is hidden, the filter nudges Instagram to load more', async () => {
   const page = await open(browser, '/?fake=endless&hl=it');
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForFunction(() => window.fakeBatchesLoaded === 3, null, { timeout: 15000 });
   await expectVisible(page, ['first-friend', 'late-friend'], true);
   await expectVisible(page, ['sugg-1', 'sugg-5', 'sugg-9'], false);
+});
+
+test('endless feed on a slow connection: no nudge while a batch is on its way, so no post shows up twice', async () => {
+  const page = await open(browser, '/?fake=endless&slow=1&hl=it');
+  await page.waitForFunction(() => document.querySelector('[data-fx="late-friend"]'), null, { timeout: 20000 });
+  const copies = await page.evaluate(() => {
+    const n = {};
+    for (const a of document.querySelectorAll('article')) n[a.dataset.fx] = (n[a.dataset.fx] || 0) + 1;
+    return n;
+  });
+  for (const [fx, n] of Object.entries(copies)) assert.equal(n, 1, `${fx} shows up once`);
+  assert.equal(await page.evaluate(() => window.fakeLoadsStarted), 2, 'one load per batch');
+  await expectVisible(page, ['first-friend', 'late-friend'], true);
 });
 
 test('notifications stay; only the "Suggeriti per te" section under them is hidden', async () => {

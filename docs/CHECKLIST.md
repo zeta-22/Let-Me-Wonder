@@ -9,7 +9,10 @@ screen and paste it to Claude, saying which item failed.
       first (Instagram's "Seguiti" feed), also when you tap the Home button.
       (Switch: "Home: only people you follow".)
 - [ ] **Keeps loading:** scroll down; new posts keep coming until you've seen
-      them all, without getting stuck on the loading spinner.
+      them all, without getting stuck on the loading spinner, and without the
+      same posts showing up again further down.
+- [ ] **Home on the Following feed:** tapping Home (or the back arrow next to
+      "Seguiti") scrolls back to the top; the page doesn't reload.
 - [ ] **Friends' reels:** reels from people you follow appear in the feed;
       suggested reels don't. (To hide every reel, turn on "Reels in the home
       feed".)

@@ -1,7 +1,8 @@
 // Instagram's mobile site in a WebView, with the filter injected at page start.
 // The filter handles everything inside the page; this screen adds what only the
 // app can do: stop full page loads to blocked addresses, open other websites in
-// the phone's browser, the Android back button, and the app's settings screen.
+// the phone's browser, the Android back button, the app's settings screen, and a
+// fresh page when Android stops the old one.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, BackHandler, Linking, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -18,6 +19,13 @@ import { useTheme } from './theme.js';
 import { decideUrl } from './urlPolicy.js';
 
 const ORIGIN = 'https://www.instagram.com';
+const RESTART_AGAIN_MS = 60000; // the page died again this soon after a restart: ask first
+
+// What the cover says when the page can't be shown.
+const PROBLEMS = {
+  offline: { title: "Can't reach Instagram", text: 'Check your connection and try again.' },
+  crashed: { title: 'Instagram stopped working', text: 'The page crashed or the phone ran low on memory.' },
+};
 
 export default function InstagramScreen({ settings, onChangeSettings }) {
   const theme = useTheme();
@@ -28,7 +36,9 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
   const reportAsked = useRef(0); // only accept a report shortly after asking for one
   const [blockedToggle, setBlockedToggle] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState(null); // a key of PROBLEMS while the cover shows
+  const [webKey, setWebKey] = useState(0); // changed to start a fresh WebView
+  const lastRestart = useRef(0);
   // Where the app opens: the Following feed when that switch is on. Fixed at start, so
   // changing a switch never reloads the page by itself.
   const [startUrl] = useState(() => ORIGIN + (homeRedirect('/', '', settings) || '/'));
@@ -105,13 +115,30 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
 
   const reload = useCallback(() => {
     setSettingsOpen(false);
-    setFailed(false);
+    setFailed(null);
     web.current?.reload();
   }, []);
+
+  const restart = useCallback(() => {
+    lastRestart.current = Date.now();
+    canGoBack.current = false;
+    page.current = { path: '/', allowedPath: '/' };
+    setFailed(null);
+    setWebKey((k) => k + 1);
+  }, []);
+
+  // When Android stops the page's process (low on memory, or a crash), this WebView can't
+  // be used again and would stay frozen: open a fresh one on the home feed. If it happens
+  // again right away, show the cover instead of restarting in a loop.
+  const onPageGone = useCallback(() => {
+    if (Date.now() - lastRestart.current < RESTART_AGAIN_MS) setFailed('crashed');
+    else restart();
+  }, [restart]);
 
   return (
     <SafeAreaView style={[styles.root, { backgroundColor: theme.bg }]} edges={['top', 'bottom']}>
       <WebView
+        key={webKey}
         ref={web}
         style={[styles.root, { backgroundColor: theme.bg }]}
         source={{ uri: startUrl }}
@@ -124,7 +151,9 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
           canGoBack.current = nav.canGoBack;
         }}
         onLoadEnd={() => web.current?.injectJavaScript(settingsScript(settingsRef.current))}
-        onError={() => setFailed(true)}
+        onError={() => setFailed('offline')}
+        onRenderProcessGone={onPageGone}
+        onContentProcessDidTerminate={onPageGone}
         // Stay logged in: keep Instagram's cookies and storage between launches.
         domStorageEnabled
         thirdPartyCookiesEnabled
@@ -144,9 +173,13 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
 
       {failed ? (
         <View style={[styles.cover, { backgroundColor: theme.bg }]}>
-          <Text style={[styles.errorTitle, { color: theme.fg }]}>Can't reach Instagram</Text>
-          <Text style={[styles.errorText, { color: theme.muted }]}>Check your connection and try again.</Text>
-          <Pressable onPress={reload} style={[styles.retry, { backgroundColor: theme.accent }]} accessibilityRole="button">
+          <Text style={[styles.errorTitle, { color: theme.fg }]}>{PROBLEMS[failed].title}</Text>
+          <Text style={[styles.errorText, { color: theme.muted }]}>{PROBLEMS[failed].text}</Text>
+          <Pressable
+            onPress={failed === 'crashed' ? restart : reload}
+            style={[styles.retry, { backgroundColor: theme.accent }]}
+            accessibilityRole="button"
+          >
             <Text style={[styles.retryText, { color: theme.accentFg }]}>Retry</Text>
           </Pressable>
         </View>

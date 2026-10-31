@@ -13,7 +13,7 @@
 //   4. Hidden posts in a feed keep a 1-pixel invisible placeholder, and a stuck
 //      "loading" spinner gets a nudge, so Instagram's endless feed keeps loading.
 
-import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION } from './rules.js';
+import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, HOME_FEED } from './rules.js';
 import { decide, homeRedirect, pageOf } from './routes.js';
 import { withSaved } from './settings.js';
 import { buildReport } from './report.js';
@@ -31,7 +31,8 @@ const HIDE_CSS = '{display:none!important}';
 const COLLAPSE_CSS =
   '{height:1px!important;min-height:0!important;max-height:1px!important;margin:0!important;padding:0!important;' +
   'border:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important}';
-const NUDGE_AFTER_MS = 1500; // spinner on screen this long with nothing new to show
+const NUDGE_AFTER_MS = 1500; // spinner still on screen this long after a batch arrived
+const NUDGE_FALLBACK_MS = 10000; // or this long with no batch arriving at all
 const MAX_NUDGES = 30; // per stretch without a new visible post, so it can't load forever
 
 function normalize(text) {
@@ -117,16 +118,21 @@ function start() {
   }
 
   // --- styles ---------------------------------------------------------------
+  // What's inside a placeholder isn't laid out at all, so its videos can't autoplay or load.
+  function collapseCss(sel) {
+    return `${sel}${COLLAPSE_CSS}\n${sel} > *${HIDE_CSS}`;
+  }
+
   function buildCss() {
     const parts = [pageCss];
     for (const t of TOGGLES) {
       const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR}~="${t.id}"]`;
-      parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, `${marked}[${COLLAPSE_ATTR}]${COLLAPSE_CSS}`);
+      parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, collapseCss(`${marked}[${COLLAPSE_ATTR}]`));
     }
     for (const rule of CSS_RULES) {
       const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : '');
       // One block per selector, so a selector a browser doesn't support can't disable the others.
-      for (const sel of rule.css) parts.push(`${scope} ${sel}${rule.collapse ? COLLAPSE_CSS : HIDE_CSS}`);
+      for (const sel of rule.css) parts.push(rule.collapse ? collapseCss(`${scope} ${sel}`) : `${scope} ${sel}${HIDE_CSS}`);
     }
     return parts.join('\n');
   }
@@ -178,6 +184,10 @@ function start() {
     scanAll();
   }
 
+  function onHomeFeed() {
+    return page === 'home' && new URLSearchParams(location.search).get(HOME_FEED.param) === HOME_FEED.value;
+  }
+
   function onClick(e) {
     const link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!link) return;
@@ -193,7 +203,10 @@ function start() {
     if (verdict && verdict.action === 'allow') return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (home) leaveFor(home, 'followingFeed', false); // the Home button: Following feed
+    // Home (or the back arrow) on the Following feed: back to the top, like Instagram's own
+    // Home button. Reloading would start the feed over and add a copy of it to go Back through.
+    if (home && onHomeFeed()) window.scrollTo({ top: 0, behavior: 'smooth' });
+    else if (home) leaveFor(home, 'followingFeed', false); // the Home button: Following feed
     else if (verdict.action === 'redirect') leaveFor(verdict.to, verdict.toggle, false);
     else showBlocked(verdict.toggle, false);
   }
@@ -376,34 +389,53 @@ function start() {
     afterScan();
   }
 
+  function hasPost(node) {
+    return node.nodeType === 1 && (node.matches(STRUCTURE.post) || !!node.querySelector(STRUCTURE.post));
+  }
+
   function onMutations(records) {
     checkPath();
     if (root.getAttribute('data-lmw-on') === null) applyRootState(); // in case the page reset our marks
+    let postsAdded = false;
     for (const r of records) {
       if (r.type === 'characterData') scan(r.target);
-      else for (const n of r.addedNodes) scan(n);
+      else {
+        for (const n of r.addedNodes) {
+          scan(n);
+          if (!postsAdded && page === 'home' && hasPost(n)) postsAdded = true;
+        }
+      }
     }
     afterScan();
+    // Right away, not at the next tick: did the new posts leave the spinner on screen?
+    if (postsAdded) watchFeed();
   }
 
   // --- keeping the endless feed loading ---------------------------------------
-  // When most new posts are hidden, Instagram's "load more" spinner can stay on
-  // screen without Instagram noticing it should load again. Moving the spinner out
-  // of view and back for a moment, plus a scroll event, makes it check again.
-  let spinnerSince = 0;
+  // Instagram loads more posts when its "loading" spinner comes into view. When a
+  // batch arrives and everything in it is hidden, the spinner never leaves the
+  // screen, so Instagram doesn't notice it should load again. Then the filter moves
+  // the spinner out of view and back for a moment, plus a scroll event, so it checks
+  // again. Only once per batch: a nudge while a batch is still on its way can make
+  // Instagram ask for it twice, and the same posts show up again and again.
+  let spinnerEl = null; // the spinner seen last time
+  let spinnerSince = 0; // when it came on screen (0: it isn't)
+  let feedLength = 0; // posts in the feed, hidden ones too
+  let stuckSince = 0; // when a batch arrived and left the spinner on screen
+  let nudgedAt = 0;
   let lastVisibleCount = -1;
   let nudges = 0;
 
-  function visiblePosts() {
+  function visibleCount(posts) {
     let n = 0;
-    for (const post of document.querySelectorAll(STRUCTURE.post)) if (post.getBoundingClientRect().height > 1) n++;
+    for (const post of posts) if (post.getBoundingClientRect().height > 1) n++;
     return n;
   }
 
   function nudge(spinner) {
     const box = spinner.parentElement || spinner;
     const before = box.style.transform;
-    box.style.transform = 'translateY(200000px)';
+    box.style.transform = 'translateY(-200000px)'; // upwards, so the page never gets longer
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         box.style.transform = before;
@@ -414,24 +446,38 @@ function start() {
 
   function watchFeed() {
     if (page !== 'home' || blocked || document.hidden) return;
-    const count = visiblePosts();
+    const posts = document.querySelectorAll(STRUCTURE.post);
+    const count = visibleCount(posts);
     if (count !== lastVisibleCount) {
       lastVisibleCount = count;
-      spinnerSince = 0;
       nudges = 0;
     }
     const spinner = document.querySelector(STRUCTURE.loader);
     const box = spinner && spinner.getBoundingClientRect();
     const onScreen = box && box.height > 0 && box.top < window.innerHeight && box.bottom > 0;
+    // A new spinner is seen afresh by Instagram, which loads by itself: only wait for that batch.
+    const sameSpinner = spinner === spinnerEl;
+    const arrived = sameSpinner && posts.length > feedLength;
+    spinnerEl = spinner;
+    feedLength = posts.length;
     if (!onScreen) {
       spinnerSince = 0;
+      stuckSince = 0;
       return;
     }
     const now = Date.now();
-    if (!spinnerSince) spinnerSince = now;
-    if (now - spinnerSince >= NUDGE_AFTER_MS && nudges < MAX_NUDGES) {
-      nudges++;
+    if (!sameSpinner || !spinnerSince) {
       spinnerSince = now;
+      stuckSince = 0;
+    }
+    if (arrived) stuckSince = now; // new posts came, but none pushed the spinner off the screen
+    const due = stuckSince
+      ? now - stuckSince >= NUDGE_AFTER_MS
+      : now - Math.max(spinnerSince, nudgedAt) >= NUDGE_FALLBACK_MS; // Instagram never loaded anything
+    if (due && nudges < MAX_NUDGES) {
+      nudges++;
+      nudgedAt = now;
+      stuckSince = 0;
       nudge(spinner);
     }
   }
