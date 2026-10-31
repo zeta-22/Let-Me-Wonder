@@ -59,10 +59,15 @@ the moment it starts loading, and works in five layers:
    to the story before the ad. On stories, the settings button sits on the right
    edge, so you can copy a problem report while an ad is on screen.
 
+**Pinch to zoom.** Instagram's page tells the browser it can't be zoomed
+(`maximum-scale=1` in its viewport tag), so two fingers did nothing, on the web too.
+With the Display switch "Pinch to zoom photos and stories" (on by default) the filter
+allows zooming up to 5 times; the rest of Instagram's tag stays as it is.
+
 **The filters are locked with a code**, the same on every phone, so turning the
 filter off takes a deliberate step. The settings have three parts: **App** (copy a
 problem report, check for updates, reload), free for anyone; **Display** (switches
-that turn nothing back on, like Small boxes), free too; and **Filters**, which you can
+that turn nothing back on, like Small boxes or Pinch to zoom), free too; and **Filters**, which you can
 always see but only change with the code, until you close the settings. The code itself isn't in this public repository, only its fingerprint
 (`src/filter/lock.js`, which says how to change it). A four-digit code can be worked
 out from it by someone determined, and the app can be uninstalled: it's a brake, not
