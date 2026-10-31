@@ -61,7 +61,8 @@ Safari add-ons may not run in that mode, so test it:
 
 ## Settings and "Report a problem"
 - The small round button at the bottom right opens the settings. In stories
-  it sits on the right edge, halfway up; in DMs it hides. You can also open
+  it sits on the right edge, halfway up; in DMs and while you make a post or a
+  story it hides. You can also open
   **instagram.com/#lmw**.
 - The settings have three parts:
   - **Copy problem report**, for anyone: when something slipped through or

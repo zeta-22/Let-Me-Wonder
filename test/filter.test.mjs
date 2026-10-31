@@ -101,6 +101,26 @@ test('pinch to zoom: Instagram’s “no zoom” is relaxed, so two fingers zoom
   assert.equal(await pinch(off), 1, 'and no zoom, as on Instagram');
 });
 
+test('making a post or a story, the filter stays out of the way', async () => {
+  for (const where of ['/create/select/', '/stories/create/']) {
+    const page = await open(browser, `${where}?hl=it`);
+    await expectVisible(page, ['crop', 'create-file', 'create-share'], true);
+    await expectVisible(page, ['tag-people'], true); // "Suggeriti per te" here is people to tag
+    assert.equal(await gearShown(page), false, `${where}: no settings button over Instagram's buttons`);
+    assert.equal(await viewportTag(page), INSTAGRAM_VIEWPORT, `${where}: Instagram's own zoom, for its pinch-to-crop`);
+    assert.equal(await pinch(page), 1);
+    await page.waitForTimeout(1700);
+    const report = await page.evaluate(() => window.__LMW__.buildReport());
+    assert.match(report, /the page for making a post or story:\n {2}main role=main/, 'its outline is kept for the next report');
+    assert.ok(!report.includes('friend_one'), 'without names');
+  }
+  // Back on Home, zooming is allowed again.
+  const page = await open(browser, '/create/select/');
+  await page.evaluate(() => window.fake.navigate('/'));
+  await page.waitForTimeout(100);
+  assert.match(await viewportTag(page), /maximum-scale=5/);
+});
+
 test('an ad between stories is skipped with Instagram’s own next button, never the ad’s link', async () => {
   const page = await open(browser, '/');
   await page.evaluate(() => window.fake.openStoryAd());

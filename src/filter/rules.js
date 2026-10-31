@@ -4,7 +4,7 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.10.31f';
+export const RULES_VERSION = '2026.10.31g';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
@@ -15,7 +15,7 @@ export const TOGGLES = [
   { id: 'reelsTab', label: 'Reels tab and Reels pages', default: true, blocked: 'Reels are switched off.' },
   // Off by default: reels from people you follow stay in the feed (suggested ones are
   // hidden by "suggested"). Turn on to hide every reel in the home feed.
-  { id: 'feedReels', label: 'Reels in the home feed', default: false, blocked: 'Reels are switched off.', covered: 'Reel hidden' },
+  { id: 'feedReels', label: 'Reels in the home feed, also from people you follow', default: false, blocked: 'Reels are switched off.', covered: 'Reel hidden' },
   { id: 'explore', label: 'Explore grid', default: true, blocked: 'Explore is switched off. Searching for accounts still works.' },
   { id: 'suggested', label: 'Suggested posts and accounts', default: true, blocked: 'Suggestions are switched off.', covered: 'Suggestion hidden' },
   { id: 'ads', label: 'Ads and sponsored posts', default: true, blocked: 'Ads are switched off.', covered: 'Ad hidden' },
@@ -36,6 +36,9 @@ export const PAGES = [
   { name: 'reel', path: '^/(?:[^/]+/)?reels?/[^/]+/?$' },
   { name: 'post', path: '^/(?:[^/]+/)?p/[^/]+' },
   { name: 'direct', path: '^/direct(/|$)' },
+  // Making a post or a story (on the web: /create/..., and /stories/create/ for stories).
+  // The filter stays out of the way there: no labels, no settings button, Instagram's zoom.
+  { name: 'create', path: '^/(?:stories/)?create(/|$)' },
   { name: 'stories', path: '^/stories(/|$)' },
   { name: 'login', path: '^/(accounts/(login|emailsignup|password|onetap)|challenge)(/|$)' },
 ];
@@ -119,8 +122,9 @@ export const STORIES = {
   previousLabels: ['Previous', 'Back', 'Indietro', 'Precedente', 'Anterior', 'Atrás', 'Précédent', 'Retour', 'Zurück', 'Vorige', 'Terug', 'Voltar'],
 };
 
-// Label rules are skipped on these pages (a friend could write "Sponsored" in a DM).
-export const LABEL_SKIP_PAGES = ['direct', 'login'];
+// Label rules are skipped on these pages (a friend could write "Sponsored" in a DM; "Suggeriti
+// per te" while making a post is people to tag, not a suggestion).
+export const LABEL_SKIP_PAGES = ['direct', 'login', 'create'];
 
 // How the Android app introduces itself to Instagram: as normal mobile Chrome, so
 // Instagram serves its regular mobile site. Update the Chrome number now and then.

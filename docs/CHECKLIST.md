@@ -14,9 +14,10 @@ screen and paste it to Claude, saying which item failed.
       post you already passed.
 - [ ] **Friends' reels:** reels from people you follow appear in the feed;
       suggested reels don't. (To hide every reel, turn on "Reels in the home
-      feed": each one then becomes an empty card, the same size, with a small
-      grey "Reel hidden" on it. To try small boxes instead, turn on "Small boxes
-      for hidden posts"; if the feed starts jumping again, turn it off.)
+      feed, also from people you follow": each one then becomes an empty card,
+      the same size, with a small grey "Reel hidden" on it. To try small boxes
+      instead, turn on "Small boxes for hidden posts"; if the feed starts
+      jumping again, turn it off.)
 
 ## Should be gone
 - [ ] **Reels tab:** the bottom bar has no Reels button.
@@ -52,7 +53,10 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Pinch to zoom:** two fingers zoom a photo in the feed and a story; two
       fingers the other way zoom back out. (Display switch "Pinch to zoom".)
 - [ ] **Your profile** opens normally.
-- [ ] **Posting:** the **+** button lets you post a photo.
+- [ ] **Posting:** the **+** button lets you post a photo, and make a story,
+      with all the tools Instagram's website offers there (the website has fewer
+      than the Instagram app: no music or camera effects, for example). The
+      filter's button isn't shown while you make a post or story.
 - [ ] **Notifications:** the heart shows your notifications (only the
       "Suggeriti per te" accounts at the bottom are hidden).
 - [ ] **Stay logged in:** close Safari (or the app) completely, reopen

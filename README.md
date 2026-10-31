@@ -59,6 +59,12 @@ the moment it starts loading, and works in five layers:
    to the story before the ad. On stories, the settings button sits on the right
    edge, so you can copy a problem report while an ad is on screen.
 
+**Making a post or a story** (`/create/...`, `/stories/create/`): the filter stays out
+of the way. No labels there (a "Suggeriti per te" list is people to tag, and it used to
+hide the whole page), no settings button over Instagram's buttons, and Instagram's own
+zoom setting for its pinch-to-crop. The page's outline is kept for the next problem
+report. The tools are the ones Instagram's website has, fewer than its app's.
+
 **Pinch to zoom.** Instagram's page tells the browser it can't be zoomed
 (`maximum-scale=1` in its viewport tag), so two fingers did nothing, on the web too.
 With the Display switch "Pinch to zoom photos and stories" (on by default) the filter

@@ -28,7 +28,7 @@ const SETTINGS_KEY = 'lmw-settings-v1';
 const FROM_PATH_KEY = 'lmw-from-path';
 const HIDE_ATTR = 'data-lmw-hide';
 const COVER_ATTR = 'data-lmw-cover';
-const NO_GEAR_PAGES = ['direct', 'login'];
+const NO_GEAR_PAGES = ['direct', 'login', 'create']; // making a post or story: Instagram's buttons are there
 const HIDE_CSS = '{display:none!important}';
 const INVISIBLE_CSS = '{visibility:hidden!important;pointer-events:none!important}'; // keeps its size
 const SMALL_COVER_PX = 36; // a hidden post's box with the "Small boxes" test switch on
@@ -216,6 +216,8 @@ function start() {
     if (next !== page) keepCovered(page);
     page = next;
     notePage();
+    fixViewport();
+    if (page === 'create') noteCreatePage();
     const verdict = decide(path, allowedPath, settings);
     if (verdict.action === 'redirect') {
       leaveFor(verdict.to, verdict.toggle, true);
@@ -653,7 +655,8 @@ function start() {
     if (!meta) return;
     const content = meta.getAttribute('content') || '';
     if (content !== viewportSet) viewportOwn = content; // Instagram set it (again)
-    const wanted = settings.pinchZoom ? zoomable(viewportOwn) : viewportOwn;
+    // Making a post or a story, two fingers crop the photo: Instagram's own setting then.
+    const wanted = settings.pinchZoom && page !== 'create' ? zoomable(viewportOwn) : viewportOwn;
     if (content !== wanted) {
       meta.setAttribute('content', wanted);
       log.add(settings.pinchZoom ? 'pinch to zoom: allowed' : "pinch to zoom: Instagram's setting back");
@@ -680,6 +683,21 @@ function start() {
     },
     { capture: true, passive: true },
   );
+
+  // --- making a post or a story ------------------------------------------------------
+  // The filter stays out of the way there (see PAGES): no labels, no settings button, and
+  // Instagram's own zoom setting. With no button to copy a report, the page's outline
+  // (anonymous, without what you type) is kept once for the next report from elsewhere.
+  let createNoted = false;
+
+  function noteCreatePage() {
+    if (createNoted) return;
+    setTimeout(() => {
+      if (page !== 'create' || createNoted) return;
+      createNoted = true;
+      log.note('the page for making a post or story', outlineOf(document.querySelector('main') || document.body));
+    }, 1500);
+  }
 
   // --- the feed, for the report's timeline ---------------------------------------
   // Only looks: the page's height and the padding of the list holding the posts.
