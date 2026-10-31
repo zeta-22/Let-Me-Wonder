@@ -41,12 +41,20 @@ the moment it starts loading, and works in four layers:
    single reel (e.g. one sent in DMs), moving to a *different* reel is
    blocked: that's what stops the endless swipe. Home opens Instagram's
    **Following** feed (`/?variant=following`): only people you follow, newest
-   first.
+   first. That page has no stories row: its back arrow (**← Seguiti**) is left
+   to Instagram and opens the main home page, which has the stories.
 4. **The endless feed keeps working.** Hidden posts become an invisible 1-pixel
    placeholder rather than disappearing, so Instagram still "sees" them scroll
-   by and loads the next ones. If its "loading" spinner sits on screen while
-   everything new is hidden, the filter nudges it to load the next batch, at
-   most 30 times in a row without a new visible post.
+   by and loads the next ones. What's inside a placeholder isn't drawn at all,
+   so a hidden reel can't play or load its video. If a batch arrives with
+   everything in it hidden and the "loading" spinner stays on screen, the filter
+   nudges Instagram to load the next one. That's once per batch, after it has
+   arrived, not while it's still on its way (that can make Instagram fetch the
+   same posts twice). With nothing arriving at all, it tries again every 10 s, at
+   most 30 times in a row without a new visible post. On the Following
+   feed, Home scrolls back to the top instead of reloading it. Hidden posts stay
+   hidden when you open a story or a post from the feed, so the feed doesn't
+   shift underneath while you're away.
 
 It detects things by **stable signals** (link addresses such as `/reels/`,
 `/explore/` and `/reel/<id>`, `<article>` posts, roles, aria-labels, and label
@@ -64,13 +72,14 @@ src/filter/rules.js     ALL the rules: addresses, selectors, labels. Edit this o
 src/filter/routes.js    Decides if a page may open (shared with the Android app)
 src/filter/filter.js    The engine: observer, page checks, tap blocking
 src/filter/report.js    "Report a problem" outline (anonymised)
+src/filter/log.js       The report's timeline: scroll jumps, posts arriving, what the filter did
 src/filter/ui.js, *.css Blocked screen, settings button and panel
 src/filter/generated/   The built filter as the Android app injects it (don't edit)
 scripts/build-filter.mjs  Builds dist/let-me-wonder.user.js and src/filter/generated/
 dist/let-me-wonder.user.js  The built script that Userscripts installs (don't edit)
 
 App.js, index.js        The Android app's entry point
-src/mobile/InstagramScreen.js  WebView + filter, app-level page blocking, back button
+src/mobile/InstagramScreen.js  WebView + filter, app-level page blocking, back button, restart after a page crash
 src/mobile/urlPolicy.js What to do with a full page load (allow/block/browser/ignore)
 src/mobile/SettingsScreen.js, BlockedScreen.js, settings.js, injected.js, theme.js
 app.json, eas.json      App name, Android package, permissions; Expo cloud build profile
@@ -91,8 +100,10 @@ Instagram changes its site often. Most fixes are a small edit to
 1. **Get a problem report.** On the phone: filter settings → *Copy problem
    report*, on the screen where something slipped through. The report shows
    which switches are on, what was hidden, how many items each CSS rule
-   matched, and an outline of the page (tags, roles, aria-labels, link
-   patterns like `/{user}/` and `/p/{id}/`, short texts).
+   matched, a timeline of the last things that happened (scroll jumps, posts
+   arriving and leaving, page changes, nudges), and an outline of the page
+   (tags, roles, aria-labels, link patterns like `/{user}/` and `/p/{id}/`,
+   short texts).
 2. **Find the change** in the outline. Typical cases and where to fix them:
 
    | What happened | Edit in `rules.js` |

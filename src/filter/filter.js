@@ -13,10 +13,11 @@
 //   4. Hidden posts in a feed keep a 1-pixel invisible placeholder, and a stuck
 //      "loading" spinner gets a nudge, so Instagram's endless feed keeps loading.
 
-import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION } from './rules.js';
+import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, HOME_FEED } from './rules.js';
 import { decide, homeRedirect, pageOf } from './routes.js';
 import { withSaved } from './settings.js';
 import { buildReport } from './report.js';
+import { createLog } from './log.js';
 import { createUi } from './ui.js';
 import pageCss from './filter.css';
 
@@ -31,7 +32,8 @@ const HIDE_CSS = '{display:none!important}';
 const COLLAPSE_CSS =
   '{height:1px!important;min-height:0!important;max-height:1px!important;margin:0!important;padding:0!important;' +
   'border:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important}';
-const NUDGE_AFTER_MS = 1500; // spinner on screen this long with nothing new to show
+const NUDGE_AFTER_MS = 1500; // spinner still on screen this long after a batch arrived
+const NUDGE_FALLBACK_MS = 10000; // or this long with no batch arriving at all
 const MAX_NUDGES = 30; // per stretch without a new visible post, so it can't load forever
 
 function normalize(text) {
@@ -54,6 +56,7 @@ for (const rule of LABEL_RULES) {
   }
 }
 const MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
+const backLabels = new Set(HOME_FEED.backLabels.map(normalize));
 
 function sessionTake(key) {
   try {
@@ -76,6 +79,7 @@ function sessionPut(key, value) {
 function start() {
   const config = window.__LMW_CONFIG__ || {};
   const host = config.host === 'app' ? 'app' : 'safari';
+  const log = createLog();
   const settings = loadSettings(config.settings);
   const root = document.documentElement;
 
@@ -103,7 +107,11 @@ function start() {
   }
 
   function setSettings(partial) {
-    for (const k of Object.keys(settings)) if (typeof partial[k] === 'boolean') settings[k] = partial[k];
+    for (const k of Object.keys(settings)) {
+      if (typeof partial[k] !== 'boolean' || partial[k] === settings[k]) continue;
+      settings[k] = partial[k];
+      log.add(`switch ${k} ${settings[k] ? 'on' : 'off'}`);
+    }
     if (host !== 'app') {
       try {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -117,16 +125,21 @@ function start() {
   }
 
   // --- styles ---------------------------------------------------------------
+  // What's inside a placeholder isn't laid out at all, so its videos can't autoplay or load.
+  function collapseCss(sel) {
+    return `${sel}${COLLAPSE_CSS}\n${sel} > *${HIDE_CSS}`;
+  }
+
   function buildCss() {
     const parts = [pageCss];
     for (const t of TOGGLES) {
       const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR}~="${t.id}"]`;
-      parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, `${marked}[${COLLAPSE_ATTR}]${COLLAPSE_CSS}`);
+      parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, collapseCss(`${marked}[${COLLAPSE_ATTR}]`));
     }
     for (const rule of CSS_RULES) {
       const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : '');
       // One block per selector, so a selector a browser doesn't support can't disable the others.
-      for (const sel of rule.css) parts.push(`${scope} ${sel}${rule.collapse ? COLLAPSE_CSS : HIDE_CSS}`);
+      for (const sel of rule.css) parts.push(rule.collapse ? collapseCss(`${scope} ${sel}`) : `${scope} ${sel}${HIDE_CSS}`);
     }
     return parts.join('\n');
   }
@@ -141,7 +154,13 @@ function start() {
   }
 
   // --- pages and navigation ---------------------------------------------------
+  function pageLabel() {
+    const variant = page === 'home' && new URLSearchParams(location.search).get(HOME_FEED.param);
+    return page + (variant ? ` (${variant})` : '');
+  }
+
   function leaveFor(target, toggle, replace) {
+    log.add(`leaving the page: ${toggle}`);
     sessionPut(FROM_PATH_KEY, allowedPath);
     root.setAttribute('data-lmw-blocked', toggle); // hide the page while we leave it
     if (replace) location.replace(target);
@@ -152,9 +171,13 @@ function start() {
     const path = location.pathname;
     if (path === lastPath) return;
     const firstCheck = lastPath === null && navCount === 0 && !allowedPath;
-    if (lastPath !== null) navCount++;
+    const moved = lastPath !== null;
+    if (moved) navCount++;
     lastPath = path;
-    page = pageOf(path);
+    const next = pageOf(path);
+    if (next !== page) keepPlaceholders(page);
+    page = next;
+    if (moved) log.add(`page ${pageLabel()}`);
     // Opened on the home feed: show the Following feed instead (only when the page loads,
     // so choosing "For you" in Instagram's own menu still works).
     const home = firstCheck && homeRedirect(path, location.search, settings);
@@ -178,6 +201,15 @@ function start() {
     scanAll();
   }
 
+  function onHomeFeed() {
+    return page === 'home' && new URLSearchParams(location.search).get(HOME_FEED.param) === HOME_FEED.value;
+  }
+
+  function isBackArrow(link) {
+    const labelled = [link, ...link.querySelectorAll('[aria-label]')];
+    return labelled.some((el) => backLabels.has(normalize(el.getAttribute('aria-label') || '')));
+  }
+
   function onClick(e) {
     const link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!link) return;
@@ -189,11 +221,21 @@ function start() {
     }
     if (url.origin !== location.origin) return;
     const home = homeRedirect(url.pathname, url.search, settings);
+    // The Following feed's back arrow: Instagram takes you to its main page, with the stories.
+    if (home && onHomeFeed() && isBackArrow(link)) {
+      log.add('back arrow: Instagram’s main page');
+      return;
+    }
     const verdict = home ? null : decide(url.pathname, allowedPath, settings, { tapped: true });
     if (verdict && verdict.action === 'allow') return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (home) leaveFor(home, 'followingFeed', false); // the Home button: Following feed
+    // Home on the Following feed: back to the top, like Instagram's own Home button.
+    // Reloading would start the feed over and add a copy of it to go Back through.
+    if (home && onHomeFeed()) {
+      log.add('Home: back to the top');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (home) leaveFor(home, 'followingFeed', false); // the Home button: Following feed
     else if (verdict.action === 'redirect') leaveFor(verdict.to, verdict.toggle, false);
     else showBlocked(verdict.toggle, false);
   }
@@ -222,6 +264,7 @@ function start() {
   }
 
   function showBlocked(toggle, navigated) {
+    log.add(`Blocked screen: ${toggle}`);
     blocked = { toggle, navigated };
     applyRootState();
     pauseMedia();
@@ -258,6 +301,35 @@ function start() {
     // Posts, and blocks sitting between posts in a feed, keep a 1px placeholder.
     const inFeed = node.matches(STRUCTURE.post) || (node.parentElement && hasOutside(node.parentElement, node, STRUCTURE.post));
     if (inFeed) node.setAttribute(COLLAPSE_ATTR, '');
+  }
+
+  function isMarked(node, toggle) {
+    return (node.getAttribute(HIDE_ATTR) || '').split(' ').includes(toggle);
+  }
+
+  // Leaving a page: the posts its page-only rules turned into placeholders stay so, for
+  // as long as they're there. Instagram keeps the feed under a story or a post; if its
+  // hidden reels came back meanwhile, the whole feed would shift and their videos play.
+  function keepPlaceholders(fromPage) {
+    let kept = 0;
+    for (const rule of CSS_RULES) {
+      if (!rule.collapse || rule.page !== fromPage || !settings[rule.toggle]) continue;
+      for (const sel of rule.css) {
+        let found;
+        try {
+          found = document.querySelectorAll(sel);
+        } catch (e) {
+          continue; // a selector this browser doesn't support
+        }
+        for (const el of found) {
+          // Only posts in a list of posts, never the single post a page like /reel/<id>/ shows.
+          if (isMarked(el, rule.toggle) || !el.parentElement || !hasOutside(el.parentElement, el, STRUCTURE.post)) continue;
+          mark(el, rule.toggle);
+          kept++;
+        }
+      }
+    }
+    if (kept) log.add(`kept ${kept} hidden post${kept > 1 ? 's' : ''} hidden after leaving the page`);
   }
 
   // The block around a label: its post, or the largest group of elements around
@@ -376,34 +448,62 @@ function start() {
     afterScan();
   }
 
+  // Into a set: a post can come with its parent and on its own in the same batch of changes.
+  function collectPosts(node, into) {
+    if (node.nodeType !== 1) return;
+    if (node.matches(STRUCTURE.post)) into.add(node);
+    else for (const post of node.querySelectorAll(STRUCTURE.post)) into.add(post);
+  }
+
   function onMutations(records) {
     checkPath();
     if (root.getAttribute('data-lmw-on') === null) applyRootState(); // in case the page reset our marks
+    const added = new Set();
+    const removed = new Set();
     for (const r of records) {
       if (r.type === 'characterData') scan(r.target);
-      else for (const n of r.addedNodes) scan(n);
+      else {
+        for (const n of r.addedNodes) {
+          scan(n);
+          collectPosts(n, added);
+        }
+        for (const n of r.removedNodes) collectPosts(n, removed);
+      }
     }
     afterScan();
+    if (added.size || removed.size) {
+      const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(' ');
+      log.add(`posts ${change}, ${document.querySelectorAll(STRUCTURE.post).length} in the page`);
+    }
+    // Right away, not at the next tick: did the new posts leave the spinner on screen?
+    if (added.size && page === 'home') watchFeed();
   }
 
   // --- keeping the endless feed loading ---------------------------------------
-  // When most new posts are hidden, Instagram's "load more" spinner can stay on
-  // screen without Instagram noticing it should load again. Moving the spinner out
-  // of view and back for a moment, plus a scroll event, makes it check again.
-  let spinnerSince = 0;
+  // Instagram loads more posts when its "loading" spinner comes into view. When a
+  // batch arrives and everything in it is hidden, the spinner never leaves the
+  // screen, so Instagram doesn't notice it should load again. Then the filter moves
+  // the spinner out of view and back for a moment, plus a scroll event, so it checks
+  // again. Only once per batch: a nudge while a batch is still on its way can make
+  // Instagram ask for it twice, and the same posts show up again and again.
+  let spinnerEl = null; // the spinner seen last time
+  let spinnerSince = 0; // when it came on screen (0: it isn't)
+  let feedLength = 0; // posts in the feed, hidden ones too
+  let stuckSince = 0; // when a batch arrived and left the spinner on screen
+  let nudgedAt = 0;
   let lastVisibleCount = -1;
   let nudges = 0;
 
-  function visiblePosts() {
+  function visibleCount(posts) {
     let n = 0;
-    for (const post of document.querySelectorAll(STRUCTURE.post)) if (post.getBoundingClientRect().height > 1) n++;
+    for (const post of posts) if (post.getBoundingClientRect().height > 1) n++;
     return n;
   }
 
   function nudge(spinner) {
     const box = spinner.parentElement || spinner;
     const before = box.style.transform;
-    box.style.transform = 'translateY(200000px)';
+    box.style.transform = 'translateY(-200000px)'; // upwards, so the page never gets longer
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         box.style.transform = before;
@@ -414,24 +514,40 @@ function start() {
 
   function watchFeed() {
     if (page !== 'home' || blocked || document.hidden) return;
-    const count = visiblePosts();
+    const posts = document.querySelectorAll(STRUCTURE.post);
+    log.checkFeed(posts.length ? posts[0].parentElement : null);
+    const count = visibleCount(posts);
     if (count !== lastVisibleCount) {
       lastVisibleCount = count;
-      spinnerSince = 0;
       nudges = 0;
     }
     const spinner = document.querySelector(STRUCTURE.loader);
     const box = spinner && spinner.getBoundingClientRect();
     const onScreen = box && box.height > 0 && box.top < window.innerHeight && box.bottom > 0;
+    // A new spinner is seen afresh by Instagram, which loads by itself: only wait for that batch.
+    const sameSpinner = spinner === spinnerEl;
+    const arrived = sameSpinner && posts.length > feedLength;
+    spinnerEl = spinner;
+    feedLength = posts.length;
     if (!onScreen) {
       spinnerSince = 0;
+      stuckSince = 0;
       return;
     }
     const now = Date.now();
-    if (!spinnerSince) spinnerSince = now;
-    if (now - spinnerSince >= NUDGE_AFTER_MS && nudges < MAX_NUDGES) {
-      nudges++;
+    if (!sameSpinner || !spinnerSince) {
       spinnerSince = now;
+      stuckSince = 0;
+    }
+    if (arrived) stuckSince = now; // new posts came, but none pushed the spinner off the screen
+    const due = stuckSince
+      ? now - stuckSince >= NUDGE_AFTER_MS
+      : now - Math.max(spinnerSince, nudgedAt) >= NUDGE_FALLBACK_MS; // Instagram never loaded anything
+    if (due && nudges < MAX_NUDGES) {
+      nudges++;
+      nudgedAt = now;
+      log.add(`nudge ${nudges}${stuckSince ? '' : ' (nothing came for 10 s)'}: ${posts.length} posts, ${count} shown`);
+      stuckSince = 0;
       nudge(spinner);
     }
   }
@@ -444,7 +560,7 @@ function start() {
   }
 
   function report() {
-    return buildReport({ version: VERSION, rulesVersion: RULES_VERSION, host, settings, page });
+    return buildReport({ version: VERSION, rulesVersion: RULES_VERSION, host, settings, page, events: log.lines() });
   }
 
   // --- start ----------------------------------------------------------------
@@ -458,6 +574,7 @@ function start() {
     onGear: host === 'app' ? () => notifyHost({ type: 'openSettings' }) : undefined,
   });
 
+  log.add(`start ${VERSION} ${host}, ${pageLabel()}`);
   const style = document.createElement('style');
   style.id = 'lmw-style';
   style.textContent = buildCss();

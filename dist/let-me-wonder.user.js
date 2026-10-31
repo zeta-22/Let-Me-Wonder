@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.0
+// @version      0.3.2
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.30";
+  var RULES_VERSION = "2026.10.31";
   var TOGGLES = [
     { id: "followingFeed", label: "Home: only people you follow", default: true, blocked: "" },
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
@@ -29,7 +29,12 @@
     { id: "ads", label: "Ads and sponsored posts", default: true, blocked: "Ads are switched off." },
     { id: "reelSwipe", label: "Swiping to the next reel", default: true, blocked: "You watched the reel you opened. Moving on to other reels is switched off." }
   ];
-  var HOME_FEED = { toggle: "followingFeed", param: "variant", value: "following" };
+  var HOME_FEED = {
+    toggle: "followingFeed",
+    param: "variant",
+    value: "following",
+    backLabels: ["Back", "Indietro", "Atr\xE1s", "Voltar", "Retour", "Zur\xFCck", "Terug"]
+  };
   var PAGES = [
     { name: "home", path: "^/$" },
     { name: "explore", path: "^/explore/?$" },
@@ -369,7 +374,7 @@
     }
     return out;
   }
-  function buildReport({ version, rulesVersion, host, settings, page }) {
+  function buildReport({ version, rulesVersion, host, settings, page, events = [] }) {
     const mask = makeMasker(collectUsernames());
     const hiddenCounts = {};
     for (const el2 of document.querySelectorAll("[" + HIDE_ATTR + "]")) {
@@ -380,10 +385,13 @@
       `version ${version} \xB7 rules ${rulesVersion} \xB7 ${host}`,
       `page: ${page}   path: ${redactPath(location.pathname)}` + (new URLSearchParams(location.search).get("variant") ? `   feed: ${new URLSearchParams(location.search).get("variant")}` : ""),
       `screen: ${window.innerWidth}x${window.innerHeight}   ${navigator.userAgent}`,
+      `scroll: y=${Math.round(window.scrollY)} of ${document.documentElement.scrollHeight}`,
       "switches: " + TOGGLES.map((t) => `${t.id}=${settings[t.id] ? "on" : "off"}`).join(" "),
       "hidden by labels: " + (Object.entries(hiddenCounts).map(([k, v]) => `${k}\xD7${v}`).join(" ") || "none"),
       "css rule matches:",
       ...cssMatches(),
+      "what happened, oldest first (y = scroll position):",
+      ...events.map((e) => "  " + e),
       "---"
     ];
     const ctx = {
@@ -395,6 +403,50 @@
     if (document.body) walk(document.body, 0, ctx);
     if (ctx.lines.length >= MAX_LINES) ctx.lines.push("\u2026 (cut here, page is very long)");
     return head.concat(ctx.lines).join("\n");
+  }
+
+  // src/filter/log.js
+  var MAX_LINES2 = 80;
+  var JUMP_PX = 400;
+  var LIST_PX = 100;
+  var signed = (n) => (n > 0 ? "+" : "") + n;
+  function createLog() {
+    const lines = [];
+    const start2 = Date.now();
+    let lastY = 0;
+    let lastHeight = 0;
+    let lastPadding = null;
+    let fingers = 0;
+    function add(text) {
+      const s = ((Date.now() - start2) / 1e3).toFixed(1);
+      lines.push(`${s}s y=${Math.round(window.scrollY)} ${text}`);
+      if (lines.length > MAX_LINES2) lines.shift();
+    }
+    function onScroll(e) {
+      if (e.target !== document) return;
+      const y = Math.round(window.scrollY);
+      if (Math.abs(y - lastY) >= JUMP_PX) add(`scroll jumped ${signed(y - lastY)}${fingers ? ", finger on screen" : ""}`);
+      lastY = y;
+    }
+    function checkFeed(list) {
+      const h = document.documentElement.scrollHeight;
+      if (lastHeight && Math.abs(h - lastHeight) >= JUMP_PX) add(`page height ${signed(h - lastHeight)}, now ${h}`);
+      lastHeight = h;
+      if (!list) return;
+      const style = getComputedStyle(list);
+      const padding = [parseFloat(style.paddingTop) || 0, parseFloat(style.paddingBottom) || 0].map(Math.round);
+      if (!lastPadding || padding.some((p, i) => Math.abs(p - lastPadding[i]) >= LIST_PX)) {
+        if (lastPadding || padding.some(Boolean)) add(`feed list padding top ${padding[0]}, bottom ${padding[1]}`);
+        lastPadding = padding;
+      }
+    }
+    const passive = { capture: true, passive: true };
+    window.addEventListener("scroll", onScroll, passive);
+    window.addEventListener("touchstart", (e) => fingers = e.touches.length, passive);
+    window.addEventListener("touchend", (e) => fingers = e.touches.length, passive);
+    window.addEventListener("touchcancel", () => fingers = 0, passive);
+    document.addEventListener("visibilitychange", () => add(document.hidden ? "app in the background" : "app back on screen"));
+    return { add, checkFeed, lines: () => lines.slice() };
   }
 
   // src/filter/ui.css
@@ -523,7 +575,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.0" : "dev";
+  var VERSION = true ? "0.3.2" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -532,6 +584,7 @@
   var HIDE_CSS = "{display:none!important}";
   var COLLAPSE_CSS = "{height:1px!important;min-height:0!important;max-height:1px!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important}";
   var NUDGE_AFTER_MS = 1500;
+  var NUDGE_FALLBACK_MS = 1e4;
   var MAX_NUDGES = 30;
   function normalize2(text) {
     return text.replace(/[​-‍﻿]/g, "").replace(/[‘’ʼ`´]/g, "'").replace(/\s+/g, " ").trim().replace(/[.!…]+$/, "").toLowerCase();
@@ -545,6 +598,7 @@
     }
   }
   var MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
+  var backLabels = new Set(HOME_FEED.backLabels.map(normalize2));
   function sessionTake(key) {
     try {
       const v = sessionStorage.getItem(key);
@@ -563,6 +617,7 @@
   function start() {
     const config = window.__LMW_CONFIG__ || {};
     const host = config.host === "app" ? "app" : "safari";
+    const log = createLog();
     const settings = loadSettings(config.settings);
     const root = document.documentElement;
     let page = pageOf(location.pathname);
@@ -586,7 +641,11 @@
       return withSaved(saved);
     }
     function setSettings(partial) {
-      for (const k of Object.keys(settings)) if (typeof partial[k] === "boolean") settings[k] = partial[k];
+      for (const k of Object.keys(settings)) {
+        if (typeof partial[k] !== "boolean" || partial[k] === settings[k]) continue;
+        settings[k] = partial[k];
+        log.add(`switch ${k} ${settings[k] ? "on" : "off"}`);
+      }
       if (host !== "app") {
         try {
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -597,15 +656,19 @@
       lastPath = null;
       checkPath();
     }
+    function collapseCss(sel) {
+      return `${sel}${COLLAPSE_CSS}
+${sel} > *${HIDE_CSS}`;
+    }
     function buildCss() {
       const parts = [filter_default];
       for (const t of TOGGLES) {
         const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR2}~="${t.id}"]`;
-        parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, `${marked}[${COLLAPSE_ATTR}]${COLLAPSE_CSS}`);
+        parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, collapseCss(`${marked}[${COLLAPSE_ATTR}]`));
       }
       for (const rule of CSS_RULES) {
         const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : "");
-        for (const sel of rule.css) parts.push(`${scope} ${sel}${rule.collapse ? COLLAPSE_CSS : HIDE_CSS}`);
+        for (const sel of rule.css) parts.push(rule.collapse ? collapseCss(`${scope} ${sel}`) : `${scope} ${sel}${HIDE_CSS}`);
       }
       return parts.join("\n");
     }
@@ -616,7 +679,12 @@
       else root.removeAttribute("data-lmw-blocked");
       ui.setGearVisible((host === "app" || settings.showGear) && !NO_GEAR_PAGES.includes(page));
     }
+    function pageLabel() {
+      const variant = page === "home" && new URLSearchParams(location.search).get(HOME_FEED.param);
+      return page + (variant ? ` (${variant})` : "");
+    }
     function leaveFor(target, toggle, replace) {
+      log.add(`leaving the page: ${toggle}`);
       sessionPut(FROM_PATH_KEY, allowedPath);
       root.setAttribute("data-lmw-blocked", toggle);
       if (replace) location.replace(target);
@@ -626,9 +694,13 @@
       const path = location.pathname;
       if (path === lastPath) return;
       const firstCheck = lastPath === null && navCount === 0 && !allowedPath;
-      if (lastPath !== null) navCount++;
+      const moved = lastPath !== null;
+      if (moved) navCount++;
       lastPath = path;
-      page = pageOf(path);
+      const next = pageOf(path);
+      if (next !== page) keepPlaceholders(page);
+      page = next;
+      if (moved) log.add(`page ${pageLabel()}`);
       const home = firstCheck && homeRedirect(path, location.search, settings);
       if (home) {
         leaveFor(home, "followingFeed", true);
@@ -649,6 +721,13 @@
       notifyHost({ type: "page", path, allowedPath });
       scanAll();
     }
+    function onHomeFeed() {
+      return page === "home" && new URLSearchParams(location.search).get(HOME_FEED.param) === HOME_FEED.value;
+    }
+    function isBackArrow(link) {
+      const labelled = [link, ...link.querySelectorAll("[aria-label]")];
+      return labelled.some((el2) => backLabels.has(normalize2(el2.getAttribute("aria-label") || "")));
+    }
     function onClick(e) {
       const link = e.target && e.target.closest ? e.target.closest("a[href]") : null;
       if (!link) return;
@@ -660,11 +739,18 @@
       }
       if (url.origin !== location.origin) return;
       const home = homeRedirect(url.pathname, url.search, settings);
+      if (home && onHomeFeed() && isBackArrow(link)) {
+        log.add("back arrow: Instagram\u2019s main page");
+        return;
+      }
       const verdict = home ? null : decide(url.pathname, allowedPath, settings, { tapped: true });
       if (verdict && verdict.action === "allow") return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (home) leaveFor(home, "followingFeed", false);
+      if (home && onHomeFeed()) {
+        log.add("Home: back to the top");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else if (home) leaveFor(home, "followingFeed", false);
       else if (verdict.action === "redirect") leaveFor(verdict.to, verdict.toggle, false);
       else showBlocked(verdict.toggle, false);
     }
@@ -687,6 +773,7 @@
       if (blocked || post && post.getBoundingClientRect().height <= 1) media.pause();
     }
     function showBlocked(toggle, navigated) {
+      log.add(`Blocked screen: ${toggle}`);
       blocked = { toggle, navigated };
       applyRootState();
       pauseMedia();
@@ -717,6 +804,29 @@
       if (!current.includes(toggle)) node.setAttribute(HIDE_ATTR2, current.concat(toggle).join(" "));
       const inFeed = node.matches(STRUCTURE.post) || node.parentElement && hasOutside(node.parentElement, node, STRUCTURE.post);
       if (inFeed) node.setAttribute(COLLAPSE_ATTR, "");
+    }
+    function isMarked(node, toggle) {
+      return (node.getAttribute(HIDE_ATTR2) || "").split(" ").includes(toggle);
+    }
+    function keepPlaceholders(fromPage) {
+      let kept = 0;
+      for (const rule of CSS_RULES) {
+        if (!rule.collapse || rule.page !== fromPage || !settings[rule.toggle]) continue;
+        for (const sel of rule.css) {
+          let found;
+          try {
+            found = document.querySelectorAll(sel);
+          } catch (e) {
+            continue;
+          }
+          for (const el2 of found) {
+            if (isMarked(el2, rule.toggle) || !el2.parentElement || !hasOutside(el2.parentElement, el2, STRUCTURE.post)) continue;
+            mark(el2, rule.toggle);
+            kept++;
+          }
+        }
+      }
+      if (kept) log.add(`kept ${kept} hidden post${kept > 1 ? "s" : ""} hidden after leaving the page`);
     }
     function blockAround(label) {
       const post = label.closest(STRUCTURE.post);
@@ -814,27 +924,49 @@
       if (document.body) scan(document.body);
       afterScan();
     }
+    function collectPosts(node, into) {
+      if (node.nodeType !== 1) return;
+      if (node.matches(STRUCTURE.post)) into.add(node);
+      else for (const post of node.querySelectorAll(STRUCTURE.post)) into.add(post);
+    }
     function onMutations(records) {
       checkPath();
       if (root.getAttribute("data-lmw-on") === null) applyRootState();
+      const added = /* @__PURE__ */ new Set();
+      const removed = /* @__PURE__ */ new Set();
       for (const r of records) {
         if (r.type === "characterData") scan(r.target);
-        else for (const n of r.addedNodes) scan(n);
+        else {
+          for (const n of r.addedNodes) {
+            scan(n);
+            collectPosts(n, added);
+          }
+          for (const n of r.removedNodes) collectPosts(n, removed);
+        }
       }
       afterScan();
+      if (added.size || removed.size) {
+        const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(" ");
+        log.add(`posts ${change}, ${document.querySelectorAll(STRUCTURE.post).length} in the page`);
+      }
+      if (added.size && page === "home") watchFeed();
     }
+    let spinnerEl = null;
     let spinnerSince = 0;
+    let feedLength = 0;
+    let stuckSince = 0;
+    let nudgedAt = 0;
     let lastVisibleCount = -1;
     let nudges = 0;
-    function visiblePosts() {
+    function visibleCount(posts) {
       let n = 0;
-      for (const post of document.querySelectorAll(STRUCTURE.post)) if (post.getBoundingClientRect().height > 1) n++;
+      for (const post of posts) if (post.getBoundingClientRect().height > 1) n++;
       return n;
     }
     function nudge(spinner) {
       const box = spinner.parentElement || spinner;
       const before = box.style.transform;
-      box.style.transform = "translateY(200000px)";
+      box.style.transform = "translateY(-200000px)";
       requestAnimationFrame(
         () => requestAnimationFrame(() => {
           box.style.transform = before;
@@ -844,24 +976,37 @@
     }
     function watchFeed() {
       if (page !== "home" || blocked || document.hidden) return;
-      const count = visiblePosts();
+      const posts = document.querySelectorAll(STRUCTURE.post);
+      log.checkFeed(posts.length ? posts[0].parentElement : null);
+      const count = visibleCount(posts);
       if (count !== lastVisibleCount) {
         lastVisibleCount = count;
-        spinnerSince = 0;
         nudges = 0;
       }
       const spinner = document.querySelector(STRUCTURE.loader);
       const box = spinner && spinner.getBoundingClientRect();
       const onScreen = box && box.height > 0 && box.top < window.innerHeight && box.bottom > 0;
+      const sameSpinner = spinner === spinnerEl;
+      const arrived = sameSpinner && posts.length > feedLength;
+      spinnerEl = spinner;
+      feedLength = posts.length;
       if (!onScreen) {
         spinnerSince = 0;
+        stuckSince = 0;
         return;
       }
       const now = Date.now();
-      if (!spinnerSince) spinnerSince = now;
-      if (now - spinnerSince >= NUDGE_AFTER_MS && nudges < MAX_NUDGES) {
-        nudges++;
+      if (!sameSpinner || !spinnerSince) {
         spinnerSince = now;
+        stuckSince = 0;
+      }
+      if (arrived) stuckSince = now;
+      const due = stuckSince ? now - stuckSince >= NUDGE_AFTER_MS : now - Math.max(spinnerSince, nudgedAt) >= NUDGE_FALLBACK_MS;
+      if (due && nudges < MAX_NUDGES) {
+        nudges++;
+        nudgedAt = now;
+        log.add(`nudge ${nudges}${stuckSince ? "" : " (nothing came for 10 s)"}: ${posts.length} posts, ${count} shown`);
+        stuckSince = 0;
         nudge(spinner);
       }
     }
@@ -871,7 +1016,7 @@
       }
     }
     function report() {
-      return buildReport({ version: VERSION, rulesVersion: RULES_VERSION, host, settings, page });
+      return buildReport({ version: VERSION, rulesVersion: RULES_VERSION, host, settings, page, events: log.lines() });
     }
     const ui = createUi({
       toggles: TOGGLES,
@@ -882,6 +1027,7 @@
       getReport: report,
       onGear: host === "app" ? () => notifyHost({ type: "openSettings" }) : void 0
     });
+    log.add(`start ${VERSION} ${host}, ${pageLabel()}`);
     const style = document.createElement("style");
     style.id = "lmw-style";
     style.textContent = buildCss();

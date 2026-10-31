@@ -355,6 +355,98 @@ Release:
   overwrote the iPhone script folder; this avoids that.) No reinstall is needed: close
   and reopen the app twice, or tap Settings → Check for updates.
 
+### Stage 3, round 2: the home feed loops and gets stuck (2026-10-31)
+What you said: "sometimes the home crashes and gets in a loop that shows me
+multiple times the same images and it kinda gets stuck".
+
+What the report showed (Android app, 0.3.0, Italian, Following feed):
+- **Nothing was hidden by labels.** The only hidden things were 4 reels out of 8
+  posts, collapsed by "Reels in the home feed" (on; it's off by default, so it was
+  either switched on or kept from settings saved under 0.2).
+- **The "Caricamento..." spinner** sat at the end of the list, in its own wrapper.
+- **The Following page** has a back arrow next to "Seguiti" that links to `/`, as
+  does Home.
+
+So on that page the filter did only three things, and each one can loop:
+1. **The nudge** fired every 1.5 s while the spinner was on screen, including while a
+   batch was still downloading. A loader that isn't guarded against a second trigger
+   then asks for the same batch twice, and the same posts appear again. Each copy
+   counts as a "new visible post" and resets the 30-nudge limit, so it can go on.
+   The fake reproduces this (slow connection, unguarded loader): `sugg-1` showed up
+   twice.
+2. **Home or the back arrow on the Following feed** did a full reload of the same
+   feed (back to the first posts), and each tap added a copy of the feed to the
+   history. Android's Back button then went through the copies, one by one.
+3. **A hidden reel's video** was still laid out at full size inside its 1-pixel
+   placeholder, so it could load, autoplay and be paused again by the filter.
+
+Also seen in the app's code: when Android stops the WebView's page process (low on
+memory, or a crash), react-native-webview keeps the app alive but the WebView stays
+frozen until you force-close the app.
+
+Fixes (0.3.1):
+1. **Nudge once per batch.** The filter checks the feed as soon as posts are added. It
+   nudges only when a batch has arrived and the spinner is still on screen 1.5 s later.
+   It doesn't nudge while Instagram is loading, nor when the spinner is new (Instagram
+   sees a new spinner by itself). If nothing arrives at all, it tries again after 10 s.
+   The spinner is now moved up, not down, so the page never gets longer for a moment.
+2. **Home on the Following feed** scrolls to the top (like Instagram's own Home button)
+   instead of reloading. Coming from another page, Home still opens the Following feed.
+3. **Inside a placeholder nothing is drawn** (`> * { display: none }`): no video
+   loads or plays in a hidden reel.
+4. **App:** if the page's process stops, the app opens a fresh WebView on the home
+   feed. If that happens again within a minute, it shows "Instagram stopped working"
+   with a Retry button instead of restarting in a loop.
+
+Tests: a slow, unguarded loader in the fake (no post may appear twice, one load per
+batch); Home on the Following feed doesn't reload or add history; a hidden reel's video
+takes no space. All three failed before the fix.
+
+If it happens again: take the problem report *while* it's looping, and say whether the
+page reloads (goes blank) or the same posts appear again further down the feed.
+
+### Stage 3, round 3: still jumping back, stories gone (2026-10-31)
+What you said: "I go over one post and it gets back on top of it and it makes me scroll
+all over again", and stories open once, then can't be opened again.
+
+First finding: **0.3.1 never reached the phone.** `main` was still on 0.3.0, and no
+Android update had been published (this session has no `EXPO_TOKEN`). So this was 0.3.0.
+
+What I found:
+1. **0.3.0's nudge makes the page jump back.** It moved the spinner 200000 px *down* for
+   two frames, which makes the page that much longer for a moment. A scroll in progress
+   at the end of the feed then runs past the real end and snaps back. An experiment with
+   scroll gestures in headless Chrome, at the end of a feed with hidden batches: 0.3.0
+   overshot by up to 190 px, every time it nudged; 0.3.1 (spinner moved *up*) never did.
+2. **Hidden reels came back while you were away from the feed.** "Reels in the home
+   feed" is a CSS rule that applies only while the address is home. A story (or a post,
+   comments…) changes the address while Instagram keeps the feed underneath, so every
+   hidden reel grew back to full size (in the fake: 1 px → 191 px), its video could
+   play, and on return it collapsed again, moving the feed.
+3. **The Following page has no stories row** (none in your report). Its back arrow
+   "← Seguiti" leads to Instagram's main page, which has it. The filter turned that
+   arrow into a reload of the Following feed (0.3.0) or a scroll to the top (0.3.1).
+
+Fixes (0.3.2, on top of 0.3.1):
+1. **Placeholders stay put.** When you leave a page, posts its page-only rules collapsed
+   are marked as hidden (`data-lmw-hide`), so they stay collapsed for as long as they're
+   there. Only posts in a list of posts: the single post of a `/reel/<id>/` page is never
+   touched.
+2. **The back arrow on the Following feed** (found by its icon's label, `HOME_FEED.
+   backLabels` in `rules.js`) is left to Instagram: it opens the main page with the
+   stories. Home on the Following feed still scrolls to the top.
+3. **A timeline in the problem report** (`src/filter/log.js`): the last 80 things that
+   happened, with time and scroll position. Scroll jumps of 400 px or more in one step
+   (and whether a finger was on the screen), page-height jumps, posts arriving and
+   leaving, the feed list's padding, page changes, nudges, Home taps, Blocked screens,
+   switch changes, the app going to the background. Numbers and kinds of page only. If
+   the feed still jumps, the next report shows what moved it.
+
+Tests: the fake's Following page has the "← Seguiti" header, and stories open over the
+feed like the real site. New checks: the back arrow opens the main page without a
+reload; a story leaves hidden reels at 1 px and the feed where it was; the report's
+timeline has no names. Each failed before the fix. 38 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.
