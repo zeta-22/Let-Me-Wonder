@@ -32,7 +32,17 @@ what you type, and sends nothing anywhere.
 ## 4. Use it
 1. Open **instagram.com** in Safari and log in, as usual. Your password goes
    only to Instagram.
-2. Go through the [checklist](CHECKLIST.md).
+2. **Is the Reels button gone from the bottom bar?** Then the filter is running.
+3. Tap the small round button at the bottom right: the filter's settings open.
+   At the bottom they show the version, e.g. **Version 0.3.7 · rules
+   2026.10.31f**.
+4. Go through the [checklist](CHECKLIST.md).
+
+**What you'll notice:** no Reels, Explore grid, suggestions or ads. A hidden
+post keeps its place as an empty card with a small grey label ("Reel hidden",
+"Suggestion hidden"), so the feed doesn't jump. Ads between stories are skipped
+by themselves, also when you go back through the stories. Two fingers zoom
+photos and stories.
 
 ## 5. A Home Screen icon, and a quick test
 Since iOS 26, a site added to the Home Screen can open **full screen as a web
@@ -50,14 +60,21 @@ Safari add-ons may not run in that mode, so test it:
 3. Tell Claude which one it was.
 
 ## Settings and "Report a problem"
-- A small round button at the bottom right opens the settings. It hides itself
-  in DMs and stories. You can also open **instagram.com/#lmw**.
-- Each part has its own switch, all on by default. Changes apply immediately.
-- **Something addictive slipped through?** Open settings → **Copy problem
-  report**, then paste it to Claude. The report holds the page's *structure*:
-  usernames are replaced with `{user}`, captions and DM messages are left out,
-  and anything you've typed is never included. Skim it before sending if you
-  like.
+- The small round button at the bottom right opens the settings. In stories
+  it sits on the right edge, halfway up; in DMs it hides. You can also open
+  **instagram.com/#lmw**.
+- The settings have three parts:
+  - **Copy problem report**, for anyone: when something slipped through or
+    doesn't work, tap it on that screen and paste the report to Claude. It holds
+    the page's *structure* and a short timeline in numbers: usernames are
+    replaced with `{user}`, captions and DM messages are left out, and anything
+    you've typed is never included. Skim it before sending if you like.
+  - **Display**, for anyone: "Small boxes for hidden posts" (a test, off: if
+    the feed starts jumping with it, turn it off), "Pinch to zoom photos and
+    stories" (on) and "Show the settings button".
+  - **Filters**: what hides reels, Explore, suggestions and ads. You can see
+    them, but changing them takes the **code** (the owner has it). They stay
+    unlocked until you close the settings. After 5 wrong codes, wait 30 seconds.
 
 ## Updates
 When Claude fixes something, Userscripts picks up the new version by itself
