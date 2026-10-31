@@ -447,6 +447,53 @@ feed like the real site. New checks: the back arrow opens the main page without 
 reload; a story leaves hidden reels at 1 px and the feed where it was; the report's
 timeline has no names. Each failed before the fix. 38 pass.
 
+### Stage 3, round 4: the real cause of the jumping feed (2026-10-31)
+What you said (on 0.3.2, really installed this time): the same problems, and the
+stories row doesn't appear at all.
+
+What the new timeline in the report showed:
+- `feed list padding top 0, bottom 800`, then `posts +2 -2`: **Instagram's feed keeps
+  only the posts near the screen** in the page, and holds the room of the others as
+  padding on the list, from the heights it measured.
+- `page height +512`, then `-512` 0.4 s later: a reel was drawn full size and shrunk
+  by the filter right after, i.e. *after* Instagram had measured it.
+
+That's the jump. Instagram measures the reel big, the filter shrinks it to 1 px, and
+when you scroll past it Instagram puts back the room it measured. Every post after it
+moves down by a whole post, and in Chrome a change of the list's padding stops the
+browser from compensating. Reproduced in the fake (a list like Instagram's: only nearby
+posts, heights measured once, reel links arriving a moment late): with 0.3.2, the post
+after each hidden reel jumped back 477 px; with nothing hidden, no jump. The 0.3.0 nudge
+and 0.3.2's fixes were real problems too, but not this one.
+
+Fixes (0.3.3):
+1. **Hidden posts keep their exact size: covered, not shrunk.** Everything inside is
+   invisible and can't be tapped, with a small grey label from `TOGGLES[].covered`
+   ("Reel hidden", "Ad hidden", "Suggestion hidden"). `CSS_RULES` `collapse` became
+   `cover`. The feed's layout is Instagram's own, so its list and its loading work
+   as if the filter weren't there. A covered post's video is paused.
+2. **The nudge is gone**, and so is `STRUCTURE.loader`: with nothing shrunk, Instagram's
+   spinner moves as you scroll and Instagram loads by itself.
+3. **"See all" suggestions links** (`a[href^="/explore/people/"]`) are now `invisible`
+   (same size, can't be tapped) instead of removed, since one inside a suggestions
+   block made the block shorter.
+4. **Stories:** the Following page has no stories row (Instagram's page). Its back arrow
+   opens the main page with the stories. If Instagram doesn't move within 1.5 s (when
+   there's nothing to go back to: the app opens straight on Following), the filter
+   opens `HOME_FEED.mainPage` (`/?variant=home`), which it doesn't switch to Following.
+   The timeline notes which feed is showing.
+5. **Report:** the timeline of the page load *before* this one is kept on the phone, so
+   a report after a reload still shows what happened. The app adds a line when
+   Android restarted the page.
+
+Tests: the fake's virtual feed (scrolling 70 steps past hidden reels, no jump); hidden
+posts the same size as without the filter, labelled and untappable; the endless feeds
+load by scrolling, no post twice; the back arrow going nowhere opens the main page; the
+timeline survives a reload. 40 pass.
+
+Trade-off: with "Reels in the home feed" on, you scroll past an empty, labelled card
+where each reel was. With it off (the default) friends' reels just show.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

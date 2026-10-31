@@ -36,20 +36,33 @@ test('home feed: ads and suggestions are hidden; friends’ posts and reels stay
   assert.deepEqual(page.errors, []);
 });
 
-test('hidden posts keep a 1-pixel placeholder so the endless feed keeps loading', async () => {
+test('hidden posts keep their exact size, covered, so the feed’s layout is Instagram’s own', async () => {
   const page = await open(browser, '/');
+  const plain = await open(browser, '/', { settings: ALL_OFF });
   for (const fx of ['ad-en', 'suggested-post', 'suggested-carousel']) {
-    assert.equal(await height(page, fx), 1, `${fx} is collapsed, not removed`);
+    assert.equal(await height(page, fx), await height(plain, fx), `${fx} keeps its size`);
   }
-  assert.equal(await height(page, 'suggested-carousel-see-all'), 0, '"Mostra tutto" link is fully hidden');
+  await expectVisible(page, ['ad-en', 'suggested-post', 'suggested-carousel', 'suggested-carousel-see-all'], false);
+  const cover = await page.evaluate(() => {
+    const s = getComputedStyle(document.querySelector('[data-fx="ad-en"]'));
+    return { label: decodeURIComponent(s.backgroundImage), taps: s.pointerEvents };
+  });
+  assert.match(cover.label, /Ad hidden/, 'a small label says what’s there');
+  assert.equal(cover.taps, 'none', 'and it can’t be tapped');
 });
 
-test('with "Reels in the home feed" on, every reel in the feed is hidden', async () => {
+test('with "Reels in the home feed" on, every reel in the feed is covered and doesn’t play', async () => {
   const page = await open(browser, '/', { settings: { feedReels: true } });
+  const plain = await open(browser, '/', { settings: ALL_OFF });
   await expectVisible(page, ['post-reel'], false);
-  assert.equal(await height(page, 'post-reel'), 1);
-  const video = await page.evaluate(() => document.querySelector('[data-fx="post-reel"] video').getBoundingClientRect().height);
-  assert.equal(video, 0, 'the hidden reel’s video takes no space, so it can’t autoplay');
+  assert.equal(await height(page, 'post-reel'), await height(plain, 'post-reel'), 'it keeps its size');
+  const playing = await page.evaluate(async () => {
+    const v = document.querySelector('[data-fx="post-reel"] video');
+    v.play().catch(() => {});
+    await new Promise((r) => setTimeout(r, 50));
+    return !v.paused;
+  });
+  assert.equal(playing, false, 'its video is paused');
   await expectVisible(page, ['post-normal'], true);
 });
 
@@ -99,6 +112,17 @@ test('the back arrow on the Following feed opens Instagram’s main page, the on
   await expectVisible(page, ['ad-en', 'suggested-post'], false);
 });
 
+test('if the back arrow goes nowhere, the filter opens Instagram’s main page itself', async () => {
+  const page = await open(browser, '/?back=dead');
+  assert.match(await search(page), /variant=following/);
+  await tap(page, 'following-back');
+  await page.waitForURL(/variant=home/, { timeout: 5000 });
+  await page.waitForLoadState('load');
+  assert.equal(await path(page), '/');
+  assert.doesNotMatch(await search(page), /following/, 'not switched back to Following');
+  await expectVisible(page, ['stories'], true);
+});
+
 test('a story opened from the feed leaves hidden reels hidden, so the feed doesn’t move underneath', async () => {
   const page = await open(browser, '/', { settings: { feedReels: true } });
   const where = () => page.evaluate(() => ({ y: scrollY, h: document.documentElement.scrollHeight }));
@@ -107,28 +131,82 @@ test('a story opened from the feed leaves hidden reels hidden, so the feed doesn
     window.scrollTo(0, 300);
   });
   const before = await where();
+  const reelHeight = await height(page, 'post-reel');
   await page.evaluate(() => window.fake.openStory());
   await page.waitForTimeout(100);
-  assert.equal(await height(page, 'post-reel'), 1, 'still a placeholder under the story');
+  await expectVisible(page, ['post-reel'], false); // still covered under the story, so its video can't play
+  assert.equal(await height(page, 'post-reel'), reelHeight);
   assert.deepEqual(await where(), before, 'the feed underneath didn’t change');
   await page.evaluate(() => history.back());
   await page.waitForTimeout(100);
   assert.equal(await path(page), '/');
-  assert.equal(await height(page, 'post-reel'), 1);
+  await expectVisible(page, ['post-reel'], false);
   assert.deepEqual(await where(), before, 'back where you were');
 });
 
-test('endless feed: when everything new is hidden, the filter nudges Instagram to load more', async () => {
+// Keeps scrolling to the end of the page, like a finger, until `done` is true in the page.
+async function scrollUntil(page, done, ms = 15000) {
+  const until = Date.now() + ms;
+  while (!(await page.evaluate(done)) && Date.now() < until) {
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(200);
+  }
+  return page.evaluate(done);
+}
+
+test('endless feed: hidden posts keep their size, so Instagram loads more as you scroll', async () => {
   const page = await open(browser, '/?fake=endless&hl=it');
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForFunction(() => window.fakeBatchesLoaded === 3, null, { timeout: 15000 });
+  assert.equal(await scrollUntil(page, () => window.fakeBatchesLoaded === 3), true, 'every batch loaded');
   await expectVisible(page, ['first-friend', 'late-friend'], true);
   await expectVisible(page, ['sugg-1', 'sugg-5', 'sugg-9'], false);
 });
 
-test('endless feed on a slow connection: no nudge while a batch is on its way, so no post shows up twice', async () => {
+// Scrolls down like a finger, step by step, and lists every time the post at the top of the
+// screen didn't move by exactly the step: the feed jumped.
+async function scrollAndFindJumps(page, steps, step = 120) {
+  return page.evaluate(
+    async ([steps, step]) => {
+      const jumps = [];
+      const topPost = () => {
+        for (const a of document.querySelectorAll('article')) {
+          const r = a.getBoundingClientRect();
+          if (r.bottom > 0 && r.height > 1) return [a, r.top];
+        }
+        return [null, 0];
+      };
+      for (let k = 0; k < steps; k++) {
+        const [post, before] = topPost();
+        const y = window.scrollY;
+        window.scrollBy(0, step);
+        await new Promise((r) => setTimeout(r, 80));
+        const moved = window.scrollY - y;
+        if (post && post.isConnected) {
+          const after = post.getBoundingClientRect().top;
+          if (Math.abs(after - (before - moved)) > 4) jumps.push(`${post.dataset.fx}: ${Math.round(after - (before - moved))}px`);
+        }
+      }
+      return jumps;
+    },
+    [steps, step],
+  );
+}
+
+test('in a feed that keeps only nearby posts (like Instagram’s), scrolling past hidden reels never jumps', async () => {
+  const page = await open(browser, '/?fake=virtual', { settings: { feedReels: true } });
+  await page.waitForTimeout(300); // the first reel's link arrives
+  await expectVisible(page, ['v0'], true);
+  await expectVisible(page, ['v1'], false);
+  assert.deepEqual(await scrollAndFindJumps(page, 70), [], 'the feed stays under your finger');
+  const reelsSeen = await page.evaluate(() =>
+    [...document.querySelectorAll('article')].filter((a) => a.querySelector('a[href*="/reel/"]') && a.checkVisibility()).length,
+  );
+  assert.ok(reelsSeen > 0, 'reels further down are in the page too');
+  await expectVisible(page, [await page.evaluate(() => document.querySelector('article:has(a[href*="/reel/"])').dataset.fx)], false);
+});
+
+test('endless feed on a slow connection: the filter never makes Instagram load twice, so no post shows up twice', async () => {
   const page = await open(browser, '/?fake=endless&slow=1&hl=it');
-  await page.waitForFunction(() => document.querySelector('[data-fx="late-friend"]'), null, { timeout: 20000 });
+  assert.equal(await scrollUntil(page, () => !!document.querySelector('[data-fx="late-friend"]'), 20000), true);
   const copies = await page.evaluate(() => {
     const n = {};
     for (const a of document.querySelectorAll('article')) n[a.dataset.fx] = (n[a.dataset.fx] || 0) + 1;
@@ -357,6 +435,14 @@ test('problem report: a timeline of what happened, in numbers and kinds of page 
   assert.match(timeline, /page stories/);
   assert.match(timeline, /kept 1 hidden post hidden/);
   assert.ok(!/friend|stranger|brand/.test(timeline), 'no names, only numbers');
+
+  // After a reload, the report still shows what happened before it.
+  await page.reload();
+  await page.waitForTimeout(100);
+  const after = await page.evaluate(() => window.__LMW__.buildReport());
+  const before = after.slice(after.indexOf('the page load before this one'), after.indexOf('\n---\n'));
+  assert.match(before, /scroll jumped \+2500/);
+  assert.match(before, /page stories/);
 });
 
 test('inside the Android app: settings, reports and page changes go through the app', async () => {

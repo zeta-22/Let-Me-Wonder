@@ -135,8 +135,78 @@
         </div>
         <div data-fx="spinner-box"><div role="progressbar" data-fx="spinner"><svg aria-label="Caricamento..."></svg></div></div>
       </div></main>`,
+    virtual: () => `<main role="main"><div class="feed"><div class="vlist" data-fx="vlist"></div></div></main>`,
     other: () => `<main role="main"><p data-fx="other">Some other page</p></main>`,
   };
+
+  // A feed like Instagram's real one (seen in a 0.3.2 report): only the posts near the
+  // screen are in the page, and the room for the others is padding on the list. Each
+  // post's height is measured once, when it first appears, and a reel's links arrive a
+  // moment after the post itself. Every third post is a reel.
+  function startVirtualFeed() {
+    const list = view.querySelector('.vlist');
+    const COUNT = 30;
+    const ESTIMATE = 520; // the height of a post not measured yet
+    const MARGIN = 400; // posts this close to the screen are in the page
+    const measured = new Map();
+    const shown = new Map();
+    const heightOf = (i) => measured.get(i) || ESTIMATE;
+    const isReel = (i) => i % 3 === 1;
+    const make = (i) => {
+      const el = document.createElement('article');
+      el.dataset.fx = `v${i}`;
+      el.innerHTML = `<div class="post-head"><a href="/user${i}/">user${i}</a></div>
+        <div style="height:440px;background:#ddd">${isReel(i) ? '<video muted playsinline></video>' : 'photo'}</div>
+        <div class="foot" style="height:20px">${isReel(i) ? '' : `<a href="/user${i}/p/V${i}/">1 ora fa</a>`}</div>`;
+      if (isReel(i)) {
+        setTimeout(() => (el.querySelector('.foot').innerHTML = `<a href="/user${i}/reel/V${i}/">1 ora fa</a>`), 250);
+      }
+      return el;
+    };
+    function update() {
+      if (!list.isConnected) return window.removeEventListener('scroll', update);
+      const origin = list.getBoundingClientRect().top + window.scrollY;
+      const from = window.scrollY - MARGIN;
+      const to = window.scrollY + window.innerHeight + MARGIN;
+      let first = -1;
+      let last = -1;
+      let y = origin;
+      for (let i = 0; i < COUNT; i++) {
+        if (y + heightOf(i) > from && y < to) {
+          if (first < 0) first = i;
+          last = i;
+        }
+        y += heightOf(i);
+      }
+      let padTop = 0;
+      let padBottom = 0;
+      for (let i = 0; i < COUNT; i++) {
+        if (i < first) padTop += heightOf(i);
+        if (i > last) padBottom += heightOf(i);
+      }
+      for (const [i, el] of shown) {
+        if (i < first || i > last) {
+          el.remove();
+          shown.delete(i);
+        }
+      }
+      list.style.paddingTop = padTop + 'px';
+      list.style.paddingBottom = padBottom + 'px';
+      let next = null;
+      for (let i = last; i >= first; i--) {
+        let el = shown.get(i);
+        if (!el) {
+          el = make(i);
+          shown.set(i, el);
+        }
+        if (el.parentNode !== list || el.nextSibling !== next) list.insertBefore(el, next);
+        if (!measured.has(i)) measured.set(i, el.offsetHeight);
+        next = el;
+      }
+    }
+    window.addEventListener('scroll', update, { passive: true });
+    update();
+  }
 
   const suggestedPost = (n) =>
     post(`sugg-${n}`, `stranger_${n}`, `/stranger_${n}/p/S${n}/`, `<div><span>${words.suggested}</span></div><button>Segui</button>`);
@@ -184,6 +254,7 @@
   function viewFor(path) {
     let m;
     if (path === '/' && params.get('fake') === 'endless') return followingHeader() + views.endless();
+    if (path === '/' && params.get('fake') === 'virtual') return followingHeader() + views.virtual();
     if (path === '/') return followingHeader() + views.home();
     if (path === '/notifications/') return views.notifications();
     if (path === '/explore/') return views.explore();
@@ -216,6 +287,7 @@
   function render() {
     view.innerHTML = viewFor(location.pathname);
     if (view.querySelector('[data-fx="spinner-box"]')) startEndlessLoader();
+    if (view.querySelector('.vlist')) startVirtualFeed();
     if (location.pathname === '/notifications/') {
       // The suggestions list arrives a moment after its heading.
       setTimeout(() => {
@@ -255,6 +327,9 @@
     const url = new URL(a.getAttribute('href'), location.href);
     if (url.origin !== location.origin) return;
     e.preventDefault();
+    // With &back=dead, the Following page's back arrow goes nowhere, as when Instagram
+    // goes back and there's no earlier page (the app opened straight on Following).
+    if (a.dataset.fx === 'following-back' && params.get('back') === 'dead') return;
     navigate(url.pathname + url.search);
   });
   // Stories open over the feed, which stays in the page, where it was, underneath.

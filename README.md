@@ -43,18 +43,16 @@ the moment it starts loading, and works in four layers:
    **Following** feed (`/?variant=following`): only people you follow, newest
    first. That page has no stories row: its back arrow (**← Seguiti**) is left
    to Instagram and opens the main home page, which has the stories.
-4. **The endless feed keeps working.** Hidden posts become an invisible 1-pixel
-   placeholder rather than disappearing, so Instagram still "sees" them scroll
-   by and loads the next ones. What's inside a placeholder isn't drawn at all,
-   so a hidden reel can't play or load its video. If a batch arrives with
-   everything in it hidden and the "loading" spinner stays on screen, the filter
-   nudges Instagram to load the next one. That's once per batch, after it has
-   arrived, not while it's still on its way (that can make Instagram fetch the
-   same posts twice). With nothing arriving at all, it tries again every 10 s, at
-   most 30 times in a row without a new visible post. On the Following
-   feed, Home scrolls back to the top instead of reloading it. Hidden posts stay
-   hidden when you open a story or a post from the feed, so the feed doesn't
-   shift underneath while you're away.
+4. **The feed keeps its own layout.** Instagram's feed keeps only the posts
+   near the screen in the page, and holds the room of the others from their
+   measured heights. So a hidden post keeps its exact size: it is *covered*
+   (everything in it invisible and untappable, a small grey label such as
+   "Reel hidden" on it) instead of shrunk. Shrinking it made the whole feed jump
+   back by a post as you scrolled past. With the layout unchanged, Instagram's
+   scrolling and its loading of more posts work as if the filter weren't there.
+   A covered post's video is paused, and posts stay covered when you open a
+   story or a post from the feed. On the Following feed, Home scrolls back to
+   the top instead of reloading it.
 
 It detects things by **stable signals** (link addresses such as `/reels/`,
 `/explore/` and `/reel/<id>`, `<article>` posts, roles, aria-labels, and label
@@ -62,7 +60,8 @@ text in several languages), never by Instagram's random CSS class names.
 Hidden items are only hidden, never removed, so Instagram keeps working.
 
 **Privacy:** the filter never reads input boxes, never sends anything over the
-network and stores only your switch settings. You log in on Instagram's own
+network and stores only your switch settings and, for the problem report, a short
+timeline of the last page load in numbers (scroll positions, post counts). You log in on Instagram's own
 page.
 
 ## Project layout
@@ -101,7 +100,7 @@ Instagram changes its site often. Most fixes are a small edit to
    report*, on the screen where something slipped through. The report shows
    which switches are on, what was hidden, how many items each CSS rule
    matched, a timeline of the last things that happened (scroll jumps, posts
-   arriving and leaving, page changes, nudges), and an outline of the page
+   arriving and leaving, page changes, also from the page load before), and an outline of the page
    (tags, roles, aria-labels, link patterns like `/{user}/` and `/p/{id}/`,
    short texts).
 2. **Find the change** in the outline. Typical cases and where to fix them:

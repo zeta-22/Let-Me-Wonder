@@ -62,7 +62,15 @@ export async function open(browser, path, { settings, app } = {}) {
 
 export const search = (page) => page.evaluate(() => location.search);
 
-export const visible = (page, fx) => page.locator(`[data-fx="${fx}"]`).first().isVisible();
+// Can you see it? A post the filter covers keeps its box, but nothing in it shows.
+export const visible = (page, fx) =>
+  page.evaluate((f) => {
+    const el = document.querySelector(`[data-fx="${f}"]`);
+    const seen = (n) => n.checkVisibility({ visibilityProperty: true }) && n.getClientRects().length > 0;
+    if (!el || !seen(el)) return false;
+    const inside = el.querySelectorAll('*');
+    return inside.length === 0 || [...inside].some(seen);
+  }, fx);
 
 // Clicks like a finger would, even on things the filter has hidden.
 export const tap = (page, fx) => page.evaluate((f) => document.querySelector(`[data-fx="${f}"]`).click(), fx);

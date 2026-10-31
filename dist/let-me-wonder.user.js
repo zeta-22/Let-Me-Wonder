@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.2
+// @version      0.3.3
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,23 +17,24 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.31";
+  var RULES_VERSION = "2026.10.31b";
   var TOGGLES = [
     { id: "followingFeed", label: "Home: only people you follow", default: true, blocked: "" },
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
     // hidden by "suggested"). Turn on to hide every reel in the home feed.
-    { id: "feedReels", label: "Reels in the home feed", default: false, blocked: "Reels are switched off." },
+    { id: "feedReels", label: "Reels in the home feed", default: false, blocked: "Reels are switched off.", covered: "Reel hidden" },
     { id: "explore", label: "Explore grid", default: true, blocked: "Explore is switched off. Searching for accounts still works." },
-    { id: "suggested", label: "Suggested posts and accounts", default: true, blocked: "Suggestions are switched off." },
-    { id: "ads", label: "Ads and sponsored posts", default: true, blocked: "Ads are switched off." },
+    { id: "suggested", label: "Suggested posts and accounts", default: true, blocked: "Suggestions are switched off.", covered: "Suggestion hidden" },
+    { id: "ads", label: "Ads and sponsored posts", default: true, blocked: "Ads are switched off.", covered: "Ad hidden" },
     { id: "reelSwipe", label: "Swiping to the next reel", default: true, blocked: "You watched the reel you opened. Moving on to other reels is switched off." }
   ];
   var HOME_FEED = {
     toggle: "followingFeed",
     param: "variant",
     value: "following",
-    backLabels: ["Back", "Indietro", "Atr\xE1s", "Voltar", "Retour", "Zur\xFCck", "Terug"]
+    backLabels: ["Back", "Indietro", "Atr\xE1s", "Voltar", "Retour", "Zur\xFCck", "Terug"],
+    mainPage: "/?variant=home"
   };
   var PAGES = [
     { name: "home", path: "^/$" },
@@ -66,13 +67,13 @@
     {
       toggle: "feedReels",
       page: "home",
-      collapse: true,
+      cover: true,
       css: ['article:has(a[href*="/reel/"])', 'article:has(a[href^="/reels/audio/"])']
       // reel posts in the feed
     },
     { toggle: "explore", page: "explore", css: ['a[href*="/p/"]', 'a[href*="/reel/"]'] },
     // Explore grid tiles; the search box stays
-    { toggle: "suggested", css: ['a[href^="/explore/people/"]'] }
+    { toggle: "suggested", invisible: true, css: ['a[href^="/explore/people/"]'] }
     // "See all" suggested people
   ];
   var LABELS = {
@@ -118,11 +119,8 @@
     // a block never grows past or around these
     interactive: 'a, button, [role="button"], [role="link"], input',
     // a block without these is "just a heading"
-    maxLevels: 8,
+    maxLevels: 8
     // how many levels up a block can grow from its label
-    // Instagram's "loading more" spinner at the end of a feed. If it stays on screen while
-    // everything new is hidden, the filter nudges Instagram to load the next batch.
-    loader: '[role="progressbar"]'
   };
 
   // src/filter/routes.js
@@ -374,7 +372,7 @@
     }
     return out;
   }
-  function buildReport({ version, rulesVersion, host, settings, page, events = [] }) {
+  function buildReport({ version, rulesVersion, host, settings, page, events = [], eventsBefore = null }) {
     const mask = makeMasker(collectUsernames());
     const hiddenCounts = {};
     for (const el2 of document.querySelectorAll("[" + HIDE_ATTR + "]")) {
@@ -392,6 +390,7 @@
       ...cssMatches(),
       "what happened, oldest first (y = scroll position):",
       ...events.map((e) => "  " + e),
+      ...eventsBefore ? [`the page load before this one (it began ${eventsBefore.secondsEarlier} s earlier):`, ...eventsBefore.lines.map((e) => "  " + e)] : [],
       "---"
     ];
     const ctx = {
@@ -407,10 +406,20 @@
 
   // src/filter/log.js
   var MAX_LINES2 = 80;
+  var STORE_KEY = "lmw-log";
+  function loadPrevious() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORE_KEY) || "null");
+      return saved && Array.isArray(saved.lines) ? saved : null;
+    } catch (e) {
+      return null;
+    }
+  }
   var JUMP_PX = 400;
   var LIST_PX = 100;
   var signed = (n) => (n > 0 ? "+" : "") + n;
   function createLog() {
+    const previous = loadPrevious();
     const lines = [];
     const start2 = Date.now();
     let lastY = 0;
@@ -421,6 +430,14 @@
       const s = ((Date.now() - start2) / 1e3).toFixed(1);
       lines.push(`${s}s y=${Math.round(window.scrollY)} ${text}`);
       if (lines.length > MAX_LINES2) lines.shift();
+      try {
+        localStorage.setItem(STORE_KEY, JSON.stringify({ start: start2, lines }));
+      } catch (e) {
+      }
+    }
+    function before() {
+      if (!previous) return null;
+      return { secondsEarlier: Math.round((start2 - previous.start) / 1e3), lines: previous.lines.slice() };
     }
     function onScroll(e) {
       if (e.target !== document) return;
@@ -446,7 +463,7 @@
     window.addEventListener("touchend", (e) => fingers = e.touches.length, passive);
     window.addEventListener("touchcancel", () => fingers = 0, passive);
     document.addEventListener("visibilitychange", () => add(document.hidden ? "app in the background" : "app back on screen"));
-    return { add, checkFeed, lines: () => lines.slice() };
+    return { add, checkFeed, before, lines: () => lines.slice() };
   }
 
   // src/filter/ui.css
@@ -575,17 +592,24 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.2" : "dev";
+  var VERSION = true ? "0.3.3" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
-  var COLLAPSE_ATTR = "data-lmw-collapse";
+  var COVER_ATTR = "data-lmw-cover";
   var NO_GEAR_PAGES = ["direct", "stories", "login"];
   var HIDE_CSS = "{display:none!important}";
-  var COLLAPSE_CSS = "{height:1px!important;min-height:0!important;max-height:1px!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important}";
-  var NUDGE_AFTER_MS = 1500;
-  var NUDGE_FALLBACK_MS = 1e4;
-  var MAX_NUDGES = 30;
+  var INVISIBLE_CSS = "{visibility:hidden!important;pointer-events:none!important}";
+  var BACK_FALLBACK_MS = 1500;
+  function coverCss(sel, label) {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="24"><text x="120" y="16" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#8e8e8e">${label}</text></svg>`;
+    return `${sel}{pointer-events:none!important;background-image:url("data:image/svg+xml,${encodeURIComponent(svg)}")!important;background-position:center!important;background-repeat:no-repeat!important}
+${sel} *{visibility:hidden!important}`;
+  }
+  function coverLabel(toggle) {
+    const t = TOGGLES.find((x) => x.id === toggle);
+    return t && t.covered || "Hidden";
+  }
   function normalize2(text) {
     return text.replace(/[​-‍﻿]/g, "").replace(/[‘’ʼ`´]/g, "'").replace(/\s+/g, " ").trim().replace(/[.!…]+$/, "").toLowerCase();
   }
@@ -625,6 +649,7 @@
     const arrivedFrom = sessionTake(FROM_PATH_KEY);
     let allowedPath = arrivedFrom;
     let navCount = 0;
+    let shownPage = null;
     let blocked = null;
     let afterMarkers = [];
     let sectionMarkers = [];
@@ -656,19 +681,18 @@
       lastPath = null;
       checkPath();
     }
-    function collapseCss(sel) {
-      return `${sel}${COLLAPSE_CSS}
-${sel} > *${HIDE_CSS}`;
-    }
     function buildCss() {
       const parts = [filter_default];
       for (const t of TOGGLES) {
         const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR2}~="${t.id}"]`;
-        parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, collapseCss(`${marked}[${COLLAPSE_ATTR}]`));
+        parts.push(`${marked}:not([${COVER_ATTR}])${HIDE_CSS}`, coverCss(`${marked}[${COVER_ATTR}]`, coverLabel(t.id)));
       }
       for (const rule of CSS_RULES) {
         const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : "");
-        for (const sel of rule.css) parts.push(rule.collapse ? collapseCss(`${scope} ${sel}`) : `${scope} ${sel}${HIDE_CSS}`);
+        for (const sel of rule.css) {
+          if (rule.cover) parts.push(coverCss(`${scope} ${sel}`, coverLabel(rule.toggle)));
+          else parts.push(`${scope} ${sel}${rule.invisible ? INVISIBLE_CSS : HIDE_CSS}`);
+        }
       }
       return parts.join("\n");
     }
@@ -690,17 +714,24 @@ ${sel} > *${HIDE_CSS}`;
       if (replace) location.replace(target);
       else location.assign(target);
     }
+    function notePage() {
+      const label = pageLabel();
+      if (label !== shownPage) log.add(`page ${label}`);
+      shownPage = label;
+    }
     function checkPath() {
       const path = location.pathname;
-      if (path === lastPath) return;
+      if (path === lastPath) {
+        notePage();
+        return;
+      }
       const firstCheck = lastPath === null && navCount === 0 && !allowedPath;
-      const moved = lastPath !== null;
-      if (moved) navCount++;
+      if (lastPath !== null) navCount++;
       lastPath = path;
       const next = pageOf(path);
-      if (next !== page) keepPlaceholders(page);
+      if (next !== page) keepCovered(page);
       page = next;
-      if (moved) log.add(`page ${pageLabel()}`);
+      notePage();
       const home = firstCheck && homeRedirect(path, location.search, settings);
       if (home) {
         leaveFor(home, "followingFeed", true);
@@ -741,6 +772,9 @@ ${sel} > *${HIDE_CSS}`;
       const home = homeRedirect(url.pathname, url.search, settings);
       if (home && onHomeFeed() && isBackArrow(link)) {
         log.add("back arrow: Instagram\u2019s main page");
+        setTimeout(() => {
+          if (onHomeFeed()) leaveFor(HOME_FEED.mainPage, "followingFeed", false);
+        }, BACK_FALLBACK_MS);
         return;
       }
       const verdict = home ? null : decide(url.pathname, allowedPath, settings, { tapped: true });
@@ -769,8 +803,20 @@ ${sel} > *${HIDE_CSS}`;
     function onPlay(e) {
       const media = e.target;
       if (!media || !media.pause) return;
-      const post = media.closest && media.closest(STRUCTURE.post);
-      if (blocked || post && post.getBoundingClientRect().height <= 1) media.pause();
+      const holder = media.closest && (media.closest(`[${COVER_ATTR}]`) || media.closest(STRUCTURE.post));
+      if (blocked || holder && isCovered(holder)) media.pause();
+    }
+    function isCovered(node) {
+      if (node.hasAttribute(COVER_ATTR) && TOGGLES.some((t) => settings[t.id] && isMarked(node, t.id))) return true;
+      return CSS_RULES.some(
+        (rule) => rule.cover && settings[rule.toggle] && (!rule.page || rule.page === page) && rule.css.some((sel) => {
+          try {
+            return node.matches(sel);
+          } catch (err) {
+            return false;
+          }
+        })
+      );
     }
     function showBlocked(toggle, navigated) {
       log.add(`Blocked screen: ${toggle}`);
@@ -803,15 +849,15 @@ ${sel} > *${HIDE_CSS}`;
       const current = (node.getAttribute(HIDE_ATTR2) || "").split(" ").filter(Boolean);
       if (!current.includes(toggle)) node.setAttribute(HIDE_ATTR2, current.concat(toggle).join(" "));
       const inFeed = node.matches(STRUCTURE.post) || node.parentElement && hasOutside(node.parentElement, node, STRUCTURE.post);
-      if (inFeed) node.setAttribute(COLLAPSE_ATTR, "");
+      if (inFeed) node.setAttribute(COVER_ATTR, "");
     }
     function isMarked(node, toggle) {
       return (node.getAttribute(HIDE_ATTR2) || "").split(" ").includes(toggle);
     }
-    function keepPlaceholders(fromPage) {
+    function keepCovered(fromPage) {
       let kept = 0;
       for (const rule of CSS_RULES) {
-        if (!rule.collapse || rule.page !== fromPage || !settings[rule.toggle]) continue;
+        if (!rule.cover || rule.page !== fromPage || !settings[rule.toggle]) continue;
         for (const sel of rule.css) {
           let found;
           try {
@@ -949,66 +995,11 @@ ${sel} > *${HIDE_CSS}`;
         const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(" ");
         log.add(`posts ${change}, ${document.querySelectorAll(STRUCTURE.post).length} in the page`);
       }
-      if (added.size && page === "home") watchFeed();
-    }
-    let spinnerEl = null;
-    let spinnerSince = 0;
-    let feedLength = 0;
-    let stuckSince = 0;
-    let nudgedAt = 0;
-    let lastVisibleCount = -1;
-    let nudges = 0;
-    function visibleCount(posts) {
-      let n = 0;
-      for (const post of posts) if (post.getBoundingClientRect().height > 1) n++;
-      return n;
-    }
-    function nudge(spinner) {
-      const box = spinner.parentElement || spinner;
-      const before = box.style.transform;
-      box.style.transform = "translateY(-200000px)";
-      requestAnimationFrame(
-        () => requestAnimationFrame(() => {
-          box.style.transform = before;
-          window.dispatchEvent(new Event("scroll"));
-        })
-      );
     }
     function watchFeed() {
       if (page !== "home" || blocked || document.hidden) return;
-      const posts = document.querySelectorAll(STRUCTURE.post);
-      log.checkFeed(posts.length ? posts[0].parentElement : null);
-      const count = visibleCount(posts);
-      if (count !== lastVisibleCount) {
-        lastVisibleCount = count;
-        nudges = 0;
-      }
-      const spinner = document.querySelector(STRUCTURE.loader);
-      const box = spinner && spinner.getBoundingClientRect();
-      const onScreen = box && box.height > 0 && box.top < window.innerHeight && box.bottom > 0;
-      const sameSpinner = spinner === spinnerEl;
-      const arrived = sameSpinner && posts.length > feedLength;
-      spinnerEl = spinner;
-      feedLength = posts.length;
-      if (!onScreen) {
-        spinnerSince = 0;
-        stuckSince = 0;
-        return;
-      }
-      const now = Date.now();
-      if (!sameSpinner || !spinnerSince) {
-        spinnerSince = now;
-        stuckSince = 0;
-      }
-      if (arrived) stuckSince = now;
-      const due = stuckSince ? now - stuckSince >= NUDGE_AFTER_MS : now - Math.max(spinnerSince, nudgedAt) >= NUDGE_FALLBACK_MS;
-      if (due && nudges < MAX_NUDGES) {
-        nudges++;
-        nudgedAt = now;
-        log.add(`nudge ${nudges}${stuckSince ? "" : " (nothing came for 10 s)"}: ${posts.length} posts, ${count} shown`);
-        stuckSince = 0;
-        nudge(spinner);
-      }
+      const post = document.querySelector(STRUCTURE.post);
+      log.checkFeed(post ? post.parentElement : null);
     }
     function notifyHost(message) {
       if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -1016,7 +1007,15 @@ ${sel} > *${HIDE_CSS}`;
       }
     }
     function report() {
-      return buildReport({ version: VERSION, rulesVersion: RULES_VERSION, host, settings, page, events: log.lines() });
+      return buildReport({
+        version: VERSION,
+        rulesVersion: RULES_VERSION,
+        host,
+        settings,
+        page,
+        events: log.lines(),
+        eventsBefore: log.before()
+      });
     }
     const ui = createUi({
       toggles: TOGGLES,
@@ -1027,7 +1026,8 @@ ${sel} > *${HIDE_CSS}`;
       getReport: report,
       onGear: host === "app" ? () => notifyHost({ type: "openSettings" }) : void 0
     });
-    log.add(`start ${VERSION} ${host}, ${pageLabel()}`);
+    shownPage = pageLabel();
+    log.add(`start ${VERSION} ${host}, ${shownPage}`);
     const style = document.createElement("style");
     style.id = "lmw-style";
     style.textContent = buildCss();

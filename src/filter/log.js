@@ -1,15 +1,27 @@
 // What happened on the page lately, for "Report a problem": scroll and page-height
 // jumps, posts arriving and leaving, page changes, and what the filter itself did
-// (nudges, Home taps, Blocked screens). Only numbers and kinds of page, never content
-// or names. Kept in memory for this page only, never stored or sent anywhere.
+// (Home taps, Blocked screens). Only numbers and kinds of page, never content or names.
+// The last page load's timeline is kept on the phone (the page's own storage), so a
+// report taken after a reload still shows what happened before it. Never sent anywhere.
 
 const MAX_LINES = 80;
+const STORE_KEY = 'lmw-log';
+
+function loadPrevious() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    return saved && Array.isArray(saved.lines) ? saved : null;
+  } catch (e) {
+    return null;
+  }
+}
 const JUMP_PX = 400; // a scroll or page-height change this big in one step is noted
 const LIST_PX = 100; // so is a change this big in the feed list's padding
 
 const signed = (n) => (n > 0 ? '+' : '') + n;
 
 export function createLog() {
+  const previous = loadPrevious();
   const lines = [];
   const start = Date.now();
   let lastY = 0;
@@ -21,6 +33,17 @@ export function createLog() {
     const s = ((Date.now() - start) / 1000).toFixed(1);
     lines.push(`${s}s y=${Math.round(window.scrollY)} ${text}`);
     if (lines.length > MAX_LINES) lines.shift();
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ start, lines }));
+    } catch (e) {
+      /* no storage: only this page's timeline is in the report */
+    }
+  }
+
+  // The page load before this one: its lines, and how long before this one it began.
+  function before() {
+    if (!previous) return null;
+    return { secondsEarlier: Math.round((start - previous.start) / 1000), lines: previous.lines.slice() };
   }
 
   // The page's own scrolling. A finger moves it a little per frame; a big step at once
@@ -55,5 +78,5 @@ export function createLog() {
   window.addEventListener('touchcancel', () => (fingers = 0), passive);
   document.addEventListener('visibilitychange', () => add(document.hidden ? 'app in the background' : 'app back on screen'));
 
-  return { add, checkFeed, lines: () => lines.slice() };
+  return { add, checkFeed, before, lines: () => lines.slice() };
 }
