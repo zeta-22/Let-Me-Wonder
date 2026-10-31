@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.7
+// @version      0.3.8
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,12 +17,12 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.31f";
+  var RULES_VERSION = "2026.10.31g";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
     // hidden by "suggested"). Turn on to hide every reel in the home feed.
-    { id: "feedReels", label: "Reels in the home feed", default: false, blocked: "Reels are switched off.", covered: "Reel hidden" },
+    { id: "feedReels", label: "Reels in the home feed, also from people you follow", default: false, blocked: "Reels are switched off.", covered: "Reel hidden" },
     { id: "explore", label: "Explore grid", default: true, blocked: "Explore is switched off. Searching for accounts still works." },
     { id: "suggested", label: "Suggested posts and accounts", default: true, blocked: "Suggestions are switched off.", covered: "Suggestion hidden" },
     { id: "ads", label: "Ads and sponsored posts", default: true, blocked: "Ads are switched off.", covered: "Ad hidden" },
@@ -40,6 +40,9 @@
     { name: "reel", path: "^/(?:[^/]+/)?reels?/[^/]+/?$" },
     { name: "post", path: "^/(?:[^/]+/)?p/[^/]+" },
     { name: "direct", path: "^/direct(/|$)" },
+    // Making a post or a story (on the web: /create/..., and /stories/create/ for stories).
+    // The filter stays out of the way there: no labels, no settings button, Instagram's zoom.
+    { name: "create", path: "^/(?:stories/)?create(/|$)" },
     { name: "stories", path: "^/stories(/|$)" },
     { name: "login", path: "^/(accounts/(login|emailsignup|password|onetap)|challenge)(/|$)" }
   ];
@@ -108,7 +111,7 @@
     nextLabels: ["Next", "Avanti", "Siguiente", "Suivant", "Weiter", "Pr\xF3ximo", "Volgende", "Avan\xE7ar"],
     previousLabels: ["Previous", "Back", "Indietro", "Precedente", "Anterior", "Atr\xE1s", "Pr\xE9c\xE9dent", "Retour", "Zur\xFCck", "Vorige", "Terug", "Voltar"]
   };
-  var LABEL_SKIP_PAGES = ["direct", "login"];
+  var LABEL_SKIP_PAGES = ["direct", "login", "create"];
   var STRUCTURE = {
     post: "article",
     // one post in a feed
@@ -726,12 +729,12 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.7" : "dev";
+  var VERSION = true ? "0.3.8" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
   var COVER_ATTR = "data-lmw-cover";
-  var NO_GEAR_PAGES = ["direct", "login"];
+  var NO_GEAR_PAGES = ["direct", "login", "create"];
   var HIDE_CSS = "{display:none!important}";
   var INVISIBLE_CSS = "{visibility:hidden!important;pointer-events:none!important}";
   var SMALL_COVER_PX = 36;
@@ -879,6 +882,8 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       if (next !== page) keepCovered(page);
       page = next;
       notePage();
+      fixViewport();
+      if (page === "create") noteCreatePage();
       const verdict = decide(path, allowedPath, settings);
       if (verdict.action === "redirect") {
         leaveFor(verdict.to, verdict.toggle, true);
@@ -1232,7 +1237,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       if (!meta) return;
       const content = meta.getAttribute("content") || "";
       if (content !== viewportSet) viewportOwn = content;
-      const wanted = settings.pinchZoom ? zoomable(viewportOwn) : viewportOwn;
+      const wanted = settings.pinchZoom && page !== "create" ? zoomable(viewportOwn) : viewportOwn;
       if (content !== wanted) {
         meta.setAttribute("content", wanted);
         log.add(settings.pinchZoom ? "pinch to zoom: allowed" : "pinch to zoom: Instagram's setting back");
@@ -1256,6 +1261,15 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       },
       { capture: true, passive: true }
     );
+    let createNoted = false;
+    function noteCreatePage() {
+      if (createNoted) return;
+      setTimeout(() => {
+        if (page !== "create" || createNoted) return;
+        createNoted = true;
+        log.note("the page for making a post or story", outlineOf(document.querySelector("main") || document.body));
+      }, 1500);
+    }
     function watchFeed() {
       if (page !== "home" || blocked || document.hidden) return;
       const post = document.querySelector(STRUCTURE.post);

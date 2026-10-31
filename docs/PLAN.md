@@ -599,6 +599,34 @@ report's timeline, in case something else in Instagram blocks pinching.
 Tests: the fake page now carries Instagram's real tag; a pinch zooms with the switch on
 (and again after Instagram rewrites its tag), not with it off. 47 pass.
 
+### Stage 3, round 9: friends' reels, and the filter while posting (2026-10-31)
+What you said: can I see the reels of the people and pages I follow, but not all the
+others? And: check the filter on the pages for posting; don't add posting features.
+
+**Friends' reels** already work like that with "Reels in the home feed" off (its default):
+reels from accounts you follow show in the feed; others are marked "Suggeriti per te" and
+hidden by "Suggested posts and accounts"; the Reels tab and reel-to-reel swiping stay
+blocked. It was on for you. The switch is now called "Reels in the home feed, also from
+people you follow", so it's clear that turning it off brings friends' reels back.
+
+**Posting.** The website has fewer creating tools than the app (no music, camera effects,
+…), and the filter can't add any. But on the create pages (`/create/...`, and
+`/stories/create/` for stories) the filter was still at work:
+- Label rules ran. A "Suggeriti per te" heading there is people to tag, and the fake showed
+  it made `blockAround()` hide **the whole create page**, photo included (the test fails
+  on 0.3.7 exactly so).
+- The settings button sat over Instagram's buttons (on the right edge if the story editor
+  is under /stories/).
+- 0.3.7's pinch to zoom could fight Instagram's own two-finger crop.
+
+Fix (0.3.8): a `create` page kind (`PAGES`, before `stories`) where the filter steps back:
+no label rules (`LABEL_SKIP_PAGES`), no settings button, Instagram's own viewport tag. With
+no button there, the page's anonymous outline is kept once for the next report. No new
+posting feature, nothing changed in the app.
+
+Tests: on /create/select/ and /stories/create/, the crop area, file picker, people to tag
+and "Condividi" stay visible, no settings button, no zoom; back on Home, zoom again. 48 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

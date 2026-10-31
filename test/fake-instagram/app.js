@@ -136,6 +136,16 @@
         <div data-fx="spinner-box"><div role="progressbar" data-fx="spinner"><svg aria-label="Caricamento..."></svg></div></div>
       </div></main>`,
     virtual: () => `<main role="main"><div class="feed"><div class="vlist" data-fx="vlist"></div></div></main>`,
+    // Making a post or a story: the photo to crop (pinch to zoom it), the file picker, people
+    // to tag under "Suggeriti per te", and Instagram's "Condividi" at the bottom right.
+    create: () => `
+      <main role="main"><div data-fx="create">
+        <div data-fx="crop" style="height:320px;background:#ccc;touch-action:none">photo to post</div>
+        <input type="file" accept="image/*,video/*" data-fx="create-file">
+        <div data-fx="tag-people"><h4>${words.suggested}</h4>
+          <div><a href="/friend_one/">friend_one</a><button>Tagga</button></div></div>
+        <div role="button" data-fx="create-share" style="position:fixed;right:8px;bottom:70px">Condividi</div>
+      </div></main>`,
     other: () => `<main role="main"><p data-fx="other">Some other page</p></main>`,
   };
 
@@ -256,6 +266,7 @@
     if (path === '/' && params.get('fake') === 'virtual') return views.virtual();
     if (path === '/') return views.home();
     if (path === '/notifications/') return views.notifications();
+    if (/^\/(stories\/)?create\//.test(path)) return views.create();
     if (path === '/explore/') return views.explore();
     if (path.startsWith('/explore/search/')) return views.search();
     if (path === '/reels/') return views.reels();
