@@ -27,6 +27,16 @@ const PROBLEMS = {
   crashed: { title: 'Instagram stopped working', text: 'The page crashed or the phone ran low on memory.' },
 };
 
+// The report comes from the page, which can't know it was restarted: the app adds that.
+function withAppNotes(report, deaths) {
+  if (!deaths.length) return report;
+  const ago = Math.round((Date.now() - deaths[deaths.length - 1]) / 1000);
+  const note = `app: the page stopped and was restarted ${deaths.length} time(s), the last ${ago} s ago`;
+  const lines = report.split('\n');
+  lines.splice(2, 0, note);
+  return lines.join('\n');
+}
+
 export default function InstagramScreen({ settings, onChangeSettings }) {
   const theme = useTheme();
   const web = useRef(null);
@@ -39,6 +49,7 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
   const [failed, setFailed] = useState(null); // a key of PROBLEMS while the cover shows
   const [webKey, setWebKey] = useState(0); // changed to start a fresh WebView
   const lastRestart = useRef(0);
+  const pageDeaths = useRef([]); // when the page's process stopped, for the problem report
   // Where the app opens: the Following feed when that switch is on. Fixed at start, so
   // changing a switch never reloads the page by itself.
   const [startUrl] = useState(() => ORIGIN + (homeRedirect('/', '', settings) || '/'));
@@ -101,7 +112,7 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
       setSettingsOpen(true);
     } else if (msg.type === 'report' && Date.now() - reportAsked.current < 10000) {
       reportAsked.current = 0;
-      Clipboard.setStringAsync(String(msg.text)).then(() =>
+      Clipboard.setStringAsync(withAppNotes(String(msg.text), pageDeaths.current)).then(() =>
         Alert.alert('Problem report copied', 'Paste it to Claude, with a word on what slipped through.'),
       );
     }
@@ -131,6 +142,7 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
   // be used again and would stay frozen: open a fresh one on the home feed. If it happens
   // again right away, show the cover instead of restarting in a loop.
   const onPageGone = useCallback(() => {
+    pageDeaths.current.push(Date.now());
     if (Date.now() - lastRestart.current < RESTART_AGAIN_MS) setFailed('crashed');
     else restart();
   }, [restart]);

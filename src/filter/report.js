@@ -206,7 +206,7 @@ function cssMatches() {
   return out;
 }
 
-export function buildReport({ version, rulesVersion, host, settings, page, events = [] }) {
+export function buildReport({ version, rulesVersion, host, settings, page, events = [], eventsBefore = null }) {
   const mask = makeMasker(collectUsernames());
   const hiddenCounts = {};
   for (const el of document.querySelectorAll('[' + HIDE_ATTR + ']')) {
@@ -225,6 +225,9 @@ export function buildReport({ version, rulesVersion, host, settings, page, event
     ...cssMatches(),
     'what happened, oldest first (y = scroll position):',
     ...events.map((e) => '  ' + e),
+    ...(eventsBefore
+      ? [`the page load before this one (it began ${eventsBefore.secondsEarlier} s earlier):`, ...eventsBefore.lines.map((e) => '  ' + e)]
+      : []),
     '---',
   ];
   const ctx = {

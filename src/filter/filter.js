@@ -10,8 +10,9 @@
 //      marks items carrying labels such as "Sponsored" (hidden by CSS too).
 //   3. Every address change is checked against the rules (Instagram changes
 //      pages without reloading), and taps on blocked links are stopped.
-//   4. Hidden posts in a feed keep a 1-pixel invisible placeholder, and a stuck
-//      "loading" spinner gets a nudge, so Instagram's endless feed keeps loading.
+//   4. Hidden posts in a feed keep their size and are covered, so the feed's layout
+//      stays exactly Instagram's: its list, which keeps only the posts near the
+//      screen, and its loading of more posts work as if the filter weren't there.
 
 import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, HOME_FEED } from './rules.js';
 import { decide, homeRedirect, pageOf } from './routes.js';
@@ -25,16 +26,29 @@ const VERSION = typeof __LMW_VERSION__ !== 'undefined' ? __LMW_VERSION__ : 'dev'
 const SETTINGS_KEY = 'lmw-settings-v1';
 const FROM_PATH_KEY = 'lmw-from-path';
 const HIDE_ATTR = 'data-lmw-hide';
-const COLLAPSE_ATTR = 'data-lmw-collapse';
+const COVER_ATTR = 'data-lmw-cover';
 const NO_GEAR_PAGES = ['direct', 'stories', 'login'];
 const HIDE_CSS = '{display:none!important}';
-// Invisible, but still 1px tall: Instagram's endless feed keeps "seeing" it pass by.
-const COLLAPSE_CSS =
-  '{height:1px!important;min-height:0!important;max-height:1px!important;margin:0!important;padding:0!important;' +
-  'border:0!important;overflow:hidden!important;visibility:hidden!important;pointer-events:none!important}';
-const NUDGE_AFTER_MS = 1500; // spinner still on screen this long after a batch arrived
-const NUDGE_FALLBACK_MS = 10000; // or this long with no batch arriving at all
-const MAX_NUDGES = 30; // per stretch without a new visible post, so it can't load forever
+const INVISIBLE_CSS = '{visibility:hidden!important;pointer-events:none!important}'; // keeps its size
+const BACK_FALLBACK_MS = 1500; // the back arrow didn't move Instagram this long after a tap
+
+// A covered post keeps its size, so the feed keeps Instagram's own layout. Everything in
+// it is invisible and can't be tapped, and a small grey label says what was there.
+function coverCss(sel, label) {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="24"><text x="120" y="16" text-anchor="middle" ' +
+    `font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#8e8e8e">${label}</text></svg>`;
+  return (
+    `${sel}{pointer-events:none!important;background-image:url("data:image/svg+xml,${encodeURIComponent(svg)}")!important;` +
+    'background-position:center!important;background-repeat:no-repeat!important}\n' +
+    `${sel} *{visibility:hidden!important}`
+  );
+}
+
+function coverLabel(toggle) {
+  const t = TOGGLES.find((x) => x.id === toggle);
+  return (t && t.covered) || 'Hidden';
+}
 
 function normalize(text) {
   return text
@@ -88,6 +102,7 @@ function start() {
   const arrivedFrom = sessionTake(FROM_PATH_KEY); // set when the filter itself sent us here
   let allowedPath = arrivedFrom; // last path allowed, to spot reel-to-reel moves
   let navCount = 0; // address changes since the page loaded
+  let shownPage = null; // the page as last written in the timeline
   let blocked = null; // { toggle, navigated } while the Blocked screen shows
   let afterMarkers = []; // labels after which every post is hidden ("You're all caught up")
   let sectionMarkers = []; // headings on their own whose list below is hidden
@@ -125,21 +140,19 @@ function start() {
   }
 
   // --- styles ---------------------------------------------------------------
-  // What's inside a placeholder isn't laid out at all, so its videos can't autoplay or load.
-  function collapseCss(sel) {
-    return `${sel}${COLLAPSE_CSS}\n${sel} > *${HIDE_CSS}`;
-  }
-
   function buildCss() {
     const parts = [pageCss];
     for (const t of TOGGLES) {
       const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR}~="${t.id}"]`;
-      parts.push(`${marked}:not([${COLLAPSE_ATTR}])${HIDE_CSS}`, collapseCss(`${marked}[${COLLAPSE_ATTR}]`));
+      parts.push(`${marked}:not([${COVER_ATTR}])${HIDE_CSS}`, coverCss(`${marked}[${COVER_ATTR}]`, coverLabel(t.id)));
     }
     for (const rule of CSS_RULES) {
       const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : '');
       // One block per selector, so a selector a browser doesn't support can't disable the others.
-      for (const sel of rule.css) parts.push(rule.collapse ? collapseCss(`${scope} ${sel}`) : `${scope} ${sel}${HIDE_CSS}`);
+      for (const sel of rule.css) {
+        if (rule.cover) parts.push(coverCss(`${scope} ${sel}`, coverLabel(rule.toggle)));
+        else parts.push(`${scope} ${sel}${rule.invisible ? INVISIBLE_CSS : HIDE_CSS}`);
+      }
     }
     return parts.join('\n');
   }
@@ -167,17 +180,26 @@ function start() {
     else location.assign(target);
   }
 
+  // For the timeline: the kind of page, and which feed on home (Following or the main one).
+  function notePage() {
+    const label = pageLabel();
+    if (label !== shownPage) log.add(`page ${label}`);
+    shownPage = label;
+  }
+
   function checkPath() {
     const path = location.pathname;
-    if (path === lastPath) return;
+    if (path === lastPath) {
+      notePage();
+      return;
+    }
     const firstCheck = lastPath === null && navCount === 0 && !allowedPath;
-    const moved = lastPath !== null;
-    if (moved) navCount++;
+    if (lastPath !== null) navCount++;
     lastPath = path;
     const next = pageOf(path);
-    if (next !== page) keepPlaceholders(page);
+    if (next !== page) keepCovered(page);
     page = next;
-    if (moved) log.add(`page ${pageLabel()}`);
+    notePage();
     // Opened on the home feed: show the Following feed instead (only when the page loads,
     // so choosing "For you" in Instagram's own menu still works).
     const home = firstCheck && homeRedirect(path, location.search, settings);
@@ -221,9 +243,13 @@ function start() {
     }
     if (url.origin !== location.origin) return;
     const home = homeRedirect(url.pathname, url.search, settings);
-    // The Following feed's back arrow: Instagram takes you to its main page, with the stories.
+    // The Following feed's back arrow: Instagram takes you to its main page, with the
+    // stories. If it doesn't move (nothing to go back to), the filter opens that page.
     if (home && onHomeFeed() && isBackArrow(link)) {
       log.add('back arrow: Instagram’s main page');
+      setTimeout(() => {
+        if (onHomeFeed()) leaveFor(HOME_FEED.mainPage, 'followingFeed', false);
+      }, BACK_FALLBACK_MS);
       return;
     }
     const verdict = home ? null : decide(url.pathname, allowedPath, settings, { tapped: true });
@@ -255,12 +281,29 @@ function start() {
     }
   }
 
-  // A video that starts playing while blocked, or inside a hidden post, is paused.
+  // A video that starts playing while blocked, or inside a covered post, is paused.
   function onPlay(e) {
     const media = e.target;
     if (!media || !media.pause) return;
-    const post = media.closest && media.closest(STRUCTURE.post);
-    if (blocked || (post && post.getBoundingClientRect().height <= 1)) media.pause();
+    const holder = media.closest && (media.closest(`[${COVER_ATTR}]`) || media.closest(STRUCTURE.post));
+    if (blocked || (holder && isCovered(holder))) media.pause();
+  }
+
+  function isCovered(node) {
+    if (node.hasAttribute(COVER_ATTR) && TOGGLES.some((t) => settings[t.id] && isMarked(node, t.id))) return true;
+    return CSS_RULES.some(
+      (rule) =>
+        rule.cover &&
+        settings[rule.toggle] &&
+        (!rule.page || rule.page === page) &&
+        rule.css.some((sel) => {
+          try {
+            return node.matches(sel);
+          } catch (err) {
+            return false; // a selector this browser doesn't support
+          }
+        }),
+    );
   }
 
   function showBlocked(toggle, navigated) {
@@ -298,22 +341,22 @@ function start() {
     if (!node || node === root || node.matches(STRUCTURE.boundary)) return;
     const current = (node.getAttribute(HIDE_ATTR) || '').split(' ').filter(Boolean);
     if (!current.includes(toggle)) node.setAttribute(HIDE_ATTR, current.concat(toggle).join(' '));
-    // Posts, and blocks sitting between posts in a feed, keep a 1px placeholder.
+    // Posts, and blocks sitting between posts in a feed, are covered: they keep their size.
     const inFeed = node.matches(STRUCTURE.post) || (node.parentElement && hasOutside(node.parentElement, node, STRUCTURE.post));
-    if (inFeed) node.setAttribute(COLLAPSE_ATTR, '');
+    if (inFeed) node.setAttribute(COVER_ATTR, '');
   }
 
   function isMarked(node, toggle) {
     return (node.getAttribute(HIDE_ATTR) || '').split(' ').includes(toggle);
   }
 
-  // Leaving a page: the posts its page-only rules turned into placeholders stay so, for
-  // as long as they're there. Instagram keeps the feed under a story or a post; if its
-  // hidden reels came back meanwhile, the whole feed would shift and their videos play.
-  function keepPlaceholders(fromPage) {
+  // Leaving a page: the posts its page-only rules covered stay covered, for as long as
+  // they're there. Instagram keeps the feed under a story or a post, and its hidden reels
+  // shouldn't show or play there meanwhile.
+  function keepCovered(fromPage) {
     let kept = 0;
     for (const rule of CSS_RULES) {
-      if (!rule.collapse || rule.page !== fromPage || !settings[rule.toggle]) continue;
+      if (!rule.cover || rule.page !== fromPage || !settings[rule.toggle]) continue;
       for (const sel of rule.css) {
         let found;
         try {
@@ -475,81 +518,14 @@ function start() {
       const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(' ');
       log.add(`posts ${change}, ${document.querySelectorAll(STRUCTURE.post).length} in the page`);
     }
-    // Right away, not at the next tick: did the new posts leave the spinner on screen?
-    if (added.size && page === 'home') watchFeed();
   }
 
-  // --- keeping the endless feed loading ---------------------------------------
-  // Instagram loads more posts when its "loading" spinner comes into view. When a
-  // batch arrives and everything in it is hidden, the spinner never leaves the
-  // screen, so Instagram doesn't notice it should load again. Then the filter moves
-  // the spinner out of view and back for a moment, plus a scroll event, so it checks
-  // again. Only once per batch: a nudge while a batch is still on its way can make
-  // Instagram ask for it twice, and the same posts show up again and again.
-  let spinnerEl = null; // the spinner seen last time
-  let spinnerSince = 0; // when it came on screen (0: it isn't)
-  let feedLength = 0; // posts in the feed, hidden ones too
-  let stuckSince = 0; // when a batch arrived and left the spinner on screen
-  let nudgedAt = 0;
-  let lastVisibleCount = -1;
-  let nudges = 0;
-
-  function visibleCount(posts) {
-    let n = 0;
-    for (const post of posts) if (post.getBoundingClientRect().height > 1) n++;
-    return n;
-  }
-
-  function nudge(spinner) {
-    const box = spinner.parentElement || spinner;
-    const before = box.style.transform;
-    box.style.transform = 'translateY(-200000px)'; // upwards, so the page never gets longer
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        box.style.transform = before;
-        window.dispatchEvent(new Event('scroll'));
-      }),
-    );
-  }
-
+  // --- the feed, for the report's timeline ---------------------------------------
+  // Only looks: the page's height and the padding of the list holding the posts.
   function watchFeed() {
     if (page !== 'home' || blocked || document.hidden) return;
-    const posts = document.querySelectorAll(STRUCTURE.post);
-    log.checkFeed(posts.length ? posts[0].parentElement : null);
-    const count = visibleCount(posts);
-    if (count !== lastVisibleCount) {
-      lastVisibleCount = count;
-      nudges = 0;
-    }
-    const spinner = document.querySelector(STRUCTURE.loader);
-    const box = spinner && spinner.getBoundingClientRect();
-    const onScreen = box && box.height > 0 && box.top < window.innerHeight && box.bottom > 0;
-    // A new spinner is seen afresh by Instagram, which loads by itself: only wait for that batch.
-    const sameSpinner = spinner === spinnerEl;
-    const arrived = sameSpinner && posts.length > feedLength;
-    spinnerEl = spinner;
-    feedLength = posts.length;
-    if (!onScreen) {
-      spinnerSince = 0;
-      stuckSince = 0;
-      return;
-    }
-    const now = Date.now();
-    if (!sameSpinner || !spinnerSince) {
-      spinnerSince = now;
-      stuckSince = 0;
-    }
-    if (arrived) stuckSince = now; // new posts came, but none pushed the spinner off the screen
-    const due = stuckSince
-      ? now - stuckSince >= NUDGE_AFTER_MS
-      : now - Math.max(spinnerSince, nudgedAt) >= NUDGE_FALLBACK_MS; // Instagram never loaded anything
-    if (due && nudges < MAX_NUDGES) {
-      nudges++;
-      nudgedAt = now;
-      log.add(`nudge ${nudges}${stuckSince ? '' : ' (nothing came for 10 s)'}: ${posts.length} posts, ${count} shown`);
-      stuckSince = 0;
-      nudge(spinner);
-    }
+    const post = document.querySelector(STRUCTURE.post);
+    log.checkFeed(post ? post.parentElement : null);
   }
 
   // --- talking to the Android app (no-op in Safari) ---------------------------
@@ -560,7 +536,15 @@ function start() {
   }
 
   function report() {
-    return buildReport({ version: VERSION, rulesVersion: RULES_VERSION, host, settings, page, events: log.lines() });
+    return buildReport({
+      version: VERSION,
+      rulesVersion: RULES_VERSION,
+      host,
+      settings,
+      page,
+      events: log.lines(),
+      eventsBefore: log.before(),
+    });
   }
 
   // --- start ----------------------------------------------------------------
@@ -574,7 +558,8 @@ function start() {
     onGear: host === 'app' ? () => notifyHost({ type: 'openSettings' }) : undefined,
   });
 
-  log.add(`start ${VERSION} ${host}, ${pageLabel()}`);
+  shownPage = pageLabel();
+  log.add(`start ${VERSION} ${host}, ${shownPage}`);
   const style = document.createElement('style');
   style.id = 'lmw-style';
   style.textContent = buildCss();

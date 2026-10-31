@@ -4,31 +4,35 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.10.31';
+export const RULES_VERSION = '2026.10.31b';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
+// `covered` is the small label on a post this switch hides in a feed.
 export const TOGGLES = [
   { id: 'followingFeed', label: 'Home: only people you follow', default: true, blocked: '' },
   { id: 'reelsTab', label: 'Reels tab and Reels pages', default: true, blocked: 'Reels are switched off.' },
   // Off by default: reels from people you follow stay in the feed (suggested ones are
   // hidden by "suggested"). Turn on to hide every reel in the home feed.
-  { id: 'feedReels', label: 'Reels in the home feed', default: false, blocked: 'Reels are switched off.' },
+  { id: 'feedReels', label: 'Reels in the home feed', default: false, blocked: 'Reels are switched off.', covered: 'Reel hidden' },
   { id: 'explore', label: 'Explore grid', default: true, blocked: 'Explore is switched off. Searching for accounts still works.' },
-  { id: 'suggested', label: 'Suggested posts and accounts', default: true, blocked: 'Suggestions are switched off.' },
-  { id: 'ads', label: 'Ads and sponsored posts', default: true, blocked: 'Ads are switched off.' },
+  { id: 'suggested', label: 'Suggested posts and accounts', default: true, blocked: 'Suggestions are switched off.', covered: 'Suggestion hidden' },
+  { id: 'ads', label: 'Ads and sponsored posts', default: true, blocked: 'Ads are switched off.', covered: 'Ad hidden' },
   { id: 'reelSwipe', label: 'Swiping to the next reel', default: true, blocked: 'You watched the reel you opened. Moving on to other reels is switched off.' },
 ];
 
 // Home shows Instagram's "Following" feed (only people you follow, newest first)
 // instead of "For you". Used when Instagram is opened on "/" and when you tap Home.
 // That page has no stories row: its back arrow (found by its icon's label, `backLabels`)
-// is left to Instagram, and leads to the main home page with the stories.
+// is left to Instagram, and leads to the main home page with the stories. If Instagram
+// doesn't move (it had nowhere to go back to), the filter opens `mainPage`: any
+// `variant` in the address stops the filter switching it to Following.
 export const HOME_FEED = {
   toggle: 'followingFeed',
   param: 'variant',
   value: 'following',
   backLabels: ['Back', 'Indietro', 'Atrás', 'Voltar', 'Retour', 'Zurück', 'Terug'],
+  mainPage: '/?variant=home',
 };
 
 // Kinds of page, recognised by the address path (the part after instagram.com).
@@ -65,18 +69,21 @@ export const REEL_SWIPE = { toggle: 'reelSwipe', path: '^/(?:[^/]+/)?reels?/([^/
 
 // Hidden with CSS alone: instant, nothing flashes on screen.
 // `page` limits a rule to one kind of page (see PAGES). One selector per line.
-// `collapse` keeps a 1-pixel invisible placeholder instead of removing the item, for
-// posts in an endless feed: Instagram needs to "see" them pass to load the next ones.
+// `cover` keeps the item's size and covers it (its contents invisible, a small label
+// on it) instead of removing it, for posts in a feed. Instagram's feed keeps only the
+// posts near the screen and the measured room of the others: a post that shrank after
+// being measured makes the whole feed jump back. `invisible` keeps the size too, for
+// small things that can sit inside a feed (just invisible, and can't be tapped).
 export const CSS_RULES = [
   { toggle: 'reelsTab', css: ['a[href$="/reels/"]'] }, // Reels tab, also on profiles
   {
     toggle: 'feedReels',
     page: 'home',
-    collapse: true,
+    cover: true,
     css: ['article:has(a[href*="/reel/"])', 'article:has(a[href^="/reels/audio/"])'], // reel posts in the feed
   },
   { toggle: 'explore', page: 'explore', css: ['a[href*="/p/"]', 'a[href*="/reel/"]'] }, // Explore grid tiles; the search box stays
-  { toggle: 'suggested', css: ['a[href^="/explore/people/"]'] }, // "See all" suggested people
+  { toggle: 'suggested', invisible: true, css: ['a[href^="/explore/people/"]'] }, // "See all" suggested people
 ];
 
 // Labels Instagram puts on unwanted items, in several languages.
@@ -125,7 +132,4 @@ export const STRUCTURE = {
   boundary: 'main, [role="main"], nav, header, [role="dialog"], body', // a block never grows past or around these
   interactive: 'a, button, [role="button"], [role="link"], input', // a block without these is "just a heading"
   maxLevels: 8, // how many levels up a block can grow from its label
-  // Instagram's "loading more" spinner at the end of a feed. If it stays on screen while
-  // everything new is hidden, the filter nudges Instagram to load the next batch.
-  loader: '[role="progressbar"]',
 };
