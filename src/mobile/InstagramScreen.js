@@ -11,14 +11,13 @@ import { WebView } from 'react-native-webview';
 import * as Clipboard from 'expo-clipboard';
 
 import { APP_USER_AGENT } from '../filter/rules.js';
-import { homeRedirect } from '../filter/routes.js';
 import BlockedScreen from './BlockedScreen.js';
 import SettingsScreen from './SettingsScreen.js';
 import { REPORT_SCRIPT, settingsScript, startScript } from './injected.js';
 import { useTheme } from './theme.js';
 import { decideUrl } from './urlPolicy.js';
 
-const ORIGIN = 'https://www.instagram.com';
+const START_URL = 'https://www.instagram.com/'; // Instagram's own home, with the stories
 const RESTART_AGAIN_MS = 60000; // the page died again this soon after a restart: ask first
 
 // What the cover says when the page can't be shown.
@@ -50,9 +49,6 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
   const [webKey, setWebKey] = useState(0); // changed to start a fresh WebView
   const lastRestart = useRef(0);
   const pageDeaths = useRef([]); // when the page's process stopped, for the problem report
-  // Where the app opens: the Following feed when that switch is on. Fixed at start, so
-  // changing a switch never reloads the page by itself.
-  const [startUrl] = useState(() => ORIGIN + (homeRedirect('/', '', settings) || '/'));
 
   // Used for the next page load; switch changes on the open page are sent right away below.
   const injected = useMemo(() => startScript(settings), [settings]);
@@ -153,7 +149,7 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
         key={webKey}
         ref={web}
         style={[styles.root, { backgroundColor: theme.bg }]}
-        source={{ uri: startUrl }}
+        source={{ uri: START_URL }}
         userAgent={APP_USER_AGENT}
         injectedJavaScriptBeforeContentLoaded={injected}
         injectedJavaScript={injected}

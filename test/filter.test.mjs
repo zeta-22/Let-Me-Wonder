@@ -18,7 +18,7 @@ after(async () => {
 });
 
 const ALL_OFF = {
-  followingFeed: false, reelsTab: false, feedReels: false, explore: false, suggested: false, ads: false, reelSwipe: false,
+  reelsTab: false, feedReels: false, explore: false, suggested: false, ads: false, reelSwipe: false,
 };
 
 async function expectVisible(page, list, shouldBe) {
@@ -74,53 +74,15 @@ for (const hl of ['it', 'es']) {
   });
 }
 
-test('Home opens the Following feed: on load, and when tapping Home', async () => {
+test('Instagram opens on its own home page, with the stories, and Home keeps it there', async () => {
   const page = await open(browser, '/');
   assert.equal(await path(page), '/');
-  assert.equal(await search(page), '?variant=following');
+  assert.equal(await search(page), '', 'not switched to the Following feed');
+  await expectVisible(page, ['stories', 'post-normal'], true);
   await page.evaluate(() => window.fake.navigate('/direct/inbox/'));
   await tap(page, 'nav-home');
-  await page.waitForURL('https://www.instagram.com/?variant=following');
-  const off = await open(browser, '/', { settings: { followingFeed: false } });
-  assert.equal(await search(off), '', 'with the switch off, the normal feed stays');
-});
-
-test('Home on the Following feed goes back to the top instead of reloading it', async () => {
-  const page = await open(browser, '/');
-  await page.evaluate(() => {
-    window.notReloaded = true;
-    document.body.style.paddingBottom = '3000px';
-    window.scrollTo(0, 1500);
-  });
-  const entries = await page.evaluate(() => history.length);
-  await tap(page, 'nav-home');
-  await page.waitForFunction(() => window.scrollY === 0);
-  assert.equal(await page.evaluate(() => window.notReloaded), true, 'the page was not reloaded');
-  assert.equal(await page.evaluate(() => history.length), entries, 'no extra copy of the feed to go Back through');
-  assert.equal(await search(page), '?variant=following');
-});
-
-test('the back arrow on the Following feed opens Instagram’s main page, the one with stories', async () => {
-  const page = await open(browser, '/');
-  assert.equal(await search(page), '?variant=following');
-  await page.evaluate(() => (window.notReloaded = true));
-  await tap(page, 'following-back');
   assert.equal(await path(page), '/');
-  assert.equal(await search(page), '', 'Instagram’s main page, not the Following feed again');
-  assert.equal(await page.evaluate(() => window.notReloaded), true, 'Instagram moved there itself, no reload');
-  await expectVisible(page, ['stories', 'post-normal'], true);
-  await expectVisible(page, ['ad-en', 'suggested-post'], false);
-});
-
-test('if the back arrow goes nowhere, the filter opens Instagram’s main page itself', async () => {
-  const page = await open(browser, '/?back=dead');
-  assert.match(await search(page), /variant=following/);
-  await tap(page, 'following-back');
-  await page.waitForURL(/variant=home/, { timeout: 5000 });
-  await page.waitForLoadState('load');
-  assert.equal(await path(page), '/');
-  assert.doesNotMatch(await search(page), /following/, 'not switched back to Following');
-  await expectVisible(page, ['stories'], true);
+  assert.equal(await search(page), '');
 });
 
 test('an ad between stories is skipped with Instagram’s own next button, never the ad’s link', async () => {
@@ -345,7 +307,7 @@ test('opening /reels/ directly is blocked; Go back leads home', async () => {
   const page = await open(browser, '/reels/');
   assert.equal(await blockedShown(page), true);
   await tapGoBack(page);
-  await page.waitForURL('https://www.instagram.com/?variant=following');
+  await page.waitForURL('https://www.instagram.com/');
   await page.waitForTimeout(100);
   assert.equal(await blockedShown(page), false);
   assert.equal(await visible(page, 'post-normal'), true);
@@ -455,6 +417,8 @@ test('settings panel (Safari): the switches are locked with the code, and lock a
   await tapGear(page);
   assert.equal(await switchesLocked(page), true, 'locked when it opens');
   assert.equal(await flipSwitch(page, 'ads'), true, 'a locked switch doesn’t move');
+  assert.equal(await flipSwitch(page, 'smallCovers'), true, 'display switches stay free: they turn nothing back on');
+  assert.equal(await flipSwitch(page, 'smallCovers'), false);
   assert.equal(await visible(page, 'ad-en'), false);
   await enterCode(page, '1357');
   assert.equal(await switchesLocked(page), true);
@@ -501,7 +465,7 @@ test('problem report: structure only, no usernames, no messages, never what you 
 
   const home = await open(browser, '/?hl=it');
   const homeReport = await home.evaluate(() => window.__LMW__.buildReport());
-  assert.match(homeReport, /page: home .*feed: following/);
+  assert.match(homeReport, /page: home {3}path: \/\n/);
   assert.match(homeReport, /hidden by labels: .*ads×/);
   assert.match(homeReport, /href=\/\{user\}\//);
   assert.match(homeReport, /href=\/\{user\}\/p\/\{id\}\//);
@@ -532,7 +496,7 @@ test('problem report: a timeline of what happened, in numbers and kinds of page 
   await page.waitForTimeout(100);
   const report = await page.evaluate(() => window.__LMW__.buildReport());
   const timeline = report.slice(report.indexOf('what happened'), report.indexOf('\n---\n'));
-  assert.match(timeline, /start 0\.\d+\.\d+ .*home \(following\)/);
+  assert.match(timeline, /start 0\.\d+\.\d+ safari, home\n/);
   assert.match(timeline, /posts \+\d+/);
   assert.match(timeline, /scroll jumped \+2500/);
   assert.match(timeline, /page stories/);

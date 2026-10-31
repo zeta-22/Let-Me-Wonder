@@ -115,7 +115,8 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   background: none;
 }
 .status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }
-.lock { margin: 12px 0 0; }
+.section { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 18px 0 0; }
+.lock { margin: 6px 0 0; }
 .lock-msg { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
 .lock-entry { display: flex; gap: 8px; }
 .lock-entry[hidden] { display: none; }

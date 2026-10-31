@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.5
+// @version      0.3.6
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,9 +17,8 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.31d";
+  var RULES_VERSION = "2026.10.31e";
   var TOGGLES = [
-    { id: "followingFeed", label: "Home: only people you follow", default: true, blocked: "" },
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
     // hidden by "suggested"). Turn on to hide every reel in the home feed.
@@ -30,15 +29,8 @@
     { id: "reelSwipe", label: "Swiping to the next reel", default: true, blocked: "You watched the reel you opened. Moving on to other reels is switched off." },
     // A test, off by default: hidden posts become a small box instead of keeping their size,
     // and Instagram is asked to measure the feed again. If it doesn't, the feed jumps.
-    { id: "smallCovers", label: "Small boxes for hidden posts (test: the feed may jump)", default: false }
+    { id: "smallCovers", label: "Small boxes for hidden posts (test: the feed may jump)", default: false, free: true }
   ];
-  var HOME_FEED = {
-    toggle: "followingFeed",
-    param: "variant",
-    value: "following",
-    backLabels: ["Back", "Indietro", "Atr\xE1s", "Voltar", "Retour", "Zur\xFCck", "Terug"],
-    mainPage: "/?variant=home"
-  };
   var PAGES = [
     { name: "home", path: "^/$" },
     { name: "explore", path: "^/explore/?$" },
@@ -158,13 +150,6 @@
       return { action: "block", toggle: r.toggle };
     }
     return { action: "allow" };
-  }
-  function homeRedirect(path, search, settings) {
-    if (!settings[HOME_FEED.toggle] || path !== "/") return null;
-    const params = new URLSearchParams(search);
-    if (params.has(HOME_FEED.param)) return null;
-    params.set(HOME_FEED.param, HOME_FEED.value);
-    return "/?" + params.toString();
   }
 
   // src/filter/settings.js
@@ -569,7 +554,7 @@
   }
 
   // src/filter/ui.css
-  var ui_default = "/* Let Me Wonder: look of the Blocked screen, settings button and settings panel.\n   Lives in its own shadow root, so Instagram's styles can't touch it. */\n\n:host {\n  --bg: #ffffff;\n  --fg: #111111;\n  --muted: #6b6b6b;\n  --line: #e4e4e4;\n  --accent: #2f6f4f;\n  --accent-fg: #ffffff;\n  --shade: rgba(0, 0, 0, 0.35);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --bg: #121212;\n    --fg: #f2f2f2;\n    --muted: #a0a0a0;\n    --line: #2c2c2c;\n    --accent: #6fbf94;\n    --accent-fg: #0b1f14;\n    --shade: rgba(0, 0, 0, 0.6);\n  }\n}\n\n/* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */\n.blocked, .gear, .backdrop {\n  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  color: var(--fg);\n}\n\n[hidden] { display: none !important; }\nbutton { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }\n\n/* Blocked screen */\n.blocked {\n  position: fixed;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  background: var(--bg);\n  pointer-events: auto;\n}\n.blocked .card { max-width: 340px; text-align: center; }\n.blocked .leaf { width: 44px; height: 44px; color: var(--accent); }\n.blocked h1 { font-size: 21px; margin: 12px 0 8px; }\n.blocked p { color: var(--muted); margin: 0 0 22px; }\n.primary {\n  border: 0;\n  border-radius: 10px;\n  padding: 12px 26px;\n  background: var(--accent);\n  color: var(--accent-fg);\n  font-weight: 600;\n}\n\n/* Small settings button (Safari only) */\n.gear {\n  position: fixed;\n  right: 10px;\n  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: 1px solid var(--line);\n  background: var(--bg);\n  color: var(--muted);\n  opacity: 0.55;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  pointer-events: auto;\n}\n\n.gear[data-place='side'] {\n  top: 40%;\n  bottom: auto;\n}\n.gear svg { width: 18px; height: 18px; }\n\n/* Settings panel */\n.backdrop {\n  position: fixed;\n  inset: 0;\n  background: var(--shade);\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  pointer-events: auto;\n}\n.sheet {\n  width: 100%;\n  max-width: 480px;\n  max-height: 88vh;\n  overflow-y: auto;\n  background: var(--bg);\n  border-radius: 16px 16px 0 0;\n  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);\n}\n.sheet-head { display: flex; align-items: center; justify-content: space-between; }\n.sheet h2 { font-size: 18px; margin: 0; }\n.close { border: 0; background: none; font-size: 22px; padding: 4px 8px; color: var(--muted); }\n.toggles { list-style: none; margin: 10px 0; padding: 0; }\n.toggles li { border-bottom: 1px solid var(--line); }\n.toggles label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }\n.toggles input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }\n.secondary {\n  width: 100%;\n  margin-top: 14px;\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  padding: 11px;\n  background: none;\n}\n.status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }\n.lock { margin: 12px 0 0; }\n.lock-msg { margin: 0 0 8px; color: var(--muted); font-size: 14px; }\n.lock-entry { display: flex; gap: 8px; }\n.lock-entry[hidden] { display: none; }\n.code { flex: 1; min-width: 0; font-size: 16px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); }\n.unlock { width: auto; margin: 0; padding: 0 16px; }\n.toggles input:disabled { opacity: 0.45; }\n.manual { width: 100%; height: 120px; margin-top: 8px; font: 12px/1.3 ui-monospace, Menlo, monospace; }\n.foot { color: var(--muted); font-size: 12px; margin: 12px 0 0; }\n";
+  var ui_default = "/* Let Me Wonder: look of the Blocked screen, settings button and settings panel.\n   Lives in its own shadow root, so Instagram's styles can't touch it. */\n\n:host {\n  --bg: #ffffff;\n  --fg: #111111;\n  --muted: #6b6b6b;\n  --line: #e4e4e4;\n  --accent: #2f6f4f;\n  --accent-fg: #ffffff;\n  --shade: rgba(0, 0, 0, 0.35);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --bg: #121212;\n    --fg: #f2f2f2;\n    --muted: #a0a0a0;\n    --line: #2c2c2c;\n    --accent: #6fbf94;\n    --accent-fg: #0b1f14;\n    --shade: rgba(0, 0, 0, 0.6);\n  }\n}\n\n/* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */\n.blocked, .gear, .backdrop {\n  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  color: var(--fg);\n}\n\n[hidden] { display: none !important; }\nbutton { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }\n\n/* Blocked screen */\n.blocked {\n  position: fixed;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  background: var(--bg);\n  pointer-events: auto;\n}\n.blocked .card { max-width: 340px; text-align: center; }\n.blocked .leaf { width: 44px; height: 44px; color: var(--accent); }\n.blocked h1 { font-size: 21px; margin: 12px 0 8px; }\n.blocked p { color: var(--muted); margin: 0 0 22px; }\n.primary {\n  border: 0;\n  border-radius: 10px;\n  padding: 12px 26px;\n  background: var(--accent);\n  color: var(--accent-fg);\n  font-weight: 600;\n}\n\n/* Small settings button (Safari only) */\n.gear {\n  position: fixed;\n  right: 10px;\n  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: 1px solid var(--line);\n  background: var(--bg);\n  color: var(--muted);\n  opacity: 0.55;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  pointer-events: auto;\n}\n\n.gear[data-place='side'] {\n  top: 40%;\n  bottom: auto;\n}\n.gear svg { width: 18px; height: 18px; }\n\n/* Settings panel */\n.backdrop {\n  position: fixed;\n  inset: 0;\n  background: var(--shade);\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  pointer-events: auto;\n}\n.sheet {\n  width: 100%;\n  max-width: 480px;\n  max-height: 88vh;\n  overflow-y: auto;\n  background: var(--bg);\n  border-radius: 16px 16px 0 0;\n  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);\n}\n.sheet-head { display: flex; align-items: center; justify-content: space-between; }\n.sheet h2 { font-size: 18px; margin: 0; }\n.close { border: 0; background: none; font-size: 22px; padding: 4px 8px; color: var(--muted); }\n.toggles { list-style: none; margin: 10px 0; padding: 0; }\n.toggles li { border-bottom: 1px solid var(--line); }\n.toggles label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }\n.toggles input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }\n.secondary {\n  width: 100%;\n  margin-top: 14px;\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  padding: 11px;\n  background: none;\n}\n.status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }\n.section { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 18px 0 0; }\n.lock { margin: 6px 0 0; }\n.lock-msg { margin: 0 0 8px; color: var(--muted); font-size: 14px; }\n.lock-entry { display: flex; gap: 8px; }\n.lock-entry[hidden] { display: none; }\n.code { flex: 1; min-width: 0; font-size: 16px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); }\n.unlock { width: auto; margin: 0; padding: 0 16px; }\n.toggles input:disabled { opacity: 0.45; }\n.manual { width: 100%; height: 120px; margin-top: 8px; font: 12px/1.3 ui-monospace, Menlo, monospace; }\n.foot { color: var(--muted); font-size: 12px; margin: 12px 0 0; }\n";
 
   // src/filter/ui.js
   var LEAF_ICON = '<svg class="leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14z"/><path d="M5 19l7-7"/></svg>';
@@ -603,19 +588,26 @@
     backButton.addEventListener("click", () => onBack && onBack());
     const gear = el("button", { class: "gear", type: "button", "aria-label": "Let Me Wonder settings", html: SLIDERS_ICON, hidden: "" });
     gear.addEventListener("click", () => options.onGear ? options.onGear() : openPanel());
-    const switches = options.toggles.map((t) => ({ id: t.id, label: t.label }));
-    switches.push({ id: "showGear", label: "Show the settings button" });
     const inputs = {};
-    const list = el(
-      "ul",
-      { class: "toggles" },
-      switches.map((s) => {
-        const input = el("input", { type: "checkbox", role: "switch", "data-id": s.id });
-        inputs[s.id] = input;
-        input.addEventListener("change", () => options.onChange({ [s.id]: input.checked }));
-        return el("li", {}, [el("label", {}, [el("span", { text: s.label }), input])]);
-      })
-    );
+    const lockedInputs = [];
+    function switchList(switches) {
+      return el(
+        "ul",
+        { class: "toggles" },
+        switches.map((s) => {
+          const input = el("input", { type: "checkbox", role: "switch", "data-id": s.id });
+          inputs[s.id] = input;
+          if (!s.free) lockedInputs.push(input);
+          input.addEventListener("change", () => options.onChange({ [s.id]: input.checked }));
+          return el("li", {}, [el("label", {}, [el("span", { text: s.label }), input])]);
+        })
+      );
+    }
+    const freeList = switchList([
+      ...options.toggles.filter((t) => t.free),
+      { id: "showGear", label: "Show the settings button", free: true }
+    ]);
+    const list = switchList(options.toggles.filter((t) => !t.free));
     const codeBox = el("input", {
       class: "code",
       type: "password",
@@ -630,7 +622,7 @@
     let unlocked = false;
     function setLocked(locked, message) {
       unlocked = !locked;
-      for (const input of Object.values(inputs)) input.disabled = locked;
+      for (const input of lockedInputs) input.disabled = locked;
       lockMsg.textContent = message || (locked ? "Locked: enter the code to change the switches." : "Unlocked until you close this.");
       lockRow.querySelector(".lock-entry").hidden = !locked;
       codeBox.value = "";
@@ -649,10 +641,12 @@
     const closeButton = el("button", { class: "close", type: "button", "aria-label": "Close", text: "\u2715" });
     const sheet = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "Let Me Wonder settings" }, [
       el("div", { class: "sheet-head" }, [el("h2", { text: "Let Me Wonder" }), closeButton]),
-      lockRow,
-      list,
       reportButton,
       status,
+      freeList,
+      el("h3", { class: "section", text: "Filters" }),
+      lockRow,
+      list,
       el("p", {
         class: "foot",
         text: `Version ${options.version} \xB7 rules ${options.rulesVersion}. If you hide the settings button, open instagram.com/#lmw to get here.`
@@ -730,7 +724,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.5" : "dev";
+  var VERSION = true ? "0.3.6" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -738,7 +732,6 @@
   var NO_GEAR_PAGES = ["direct", "login"];
   var HIDE_CSS = "{display:none!important}";
   var INVISIBLE_CSS = "{visibility:hidden!important;pointer-events:none!important}";
-  var BACK_FALLBACK_MS = 1500;
   var SMALL_COVER_PX = 36;
   var STORY_RETRY_MS = 1500;
   var STORY_MAX_TRIES = 3;
@@ -768,7 +761,6 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     }
   }
   var MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
-  var backLabels = new Set(HOME_FEED.backLabels.map(normalize2));
   var nextLabels = new Set(STORIES.nextLabels.map(normalize2));
   var previousLabels = new Set(STORIES.previousLabels.map(normalize2));
   function sessionTake(key) {
@@ -857,7 +849,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       ui.setGearPlace(page === "stories" ? "side" : null);
     }
     function pageLabel() {
-      const variant = page === "home" && new URLSearchParams(location.search).get(HOME_FEED.param);
+      const variant = page === "home" && new URLSearchParams(location.search).get("variant");
       return page + (variant ? ` (${variant})` : "");
     }
     function leaveFor(target, toggle, replace) {
@@ -878,18 +870,12 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         notePage();
         return;
       }
-      const firstCheck = lastPath === null && navCount === 0 && !allowedPath;
       if (lastPath !== null) navCount++;
       lastPath = path;
       const next = pageOf(path);
       if (next !== page) keepCovered(page);
       page = next;
       notePage();
-      const home = firstCheck && homeRedirect(path, location.search, settings);
-      if (home) {
-        leaveFor(home, "followingFeed", true);
-        return;
-      }
       const verdict = decide(path, allowedPath, settings);
       if (verdict.action === "redirect") {
         leaveFor(verdict.to, verdict.toggle, true);
@@ -905,13 +891,6 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       notifyHost({ type: "page", path, allowedPath });
       scanAll();
     }
-    function onHomeFeed() {
-      return page === "home" && new URLSearchParams(location.search).get(HOME_FEED.param) === HOME_FEED.value;
-    }
-    function isBackArrow(link) {
-      const labelled = [link, ...link.querySelectorAll("[aria-label]")];
-      return labelled.some((el2) => backLabels.has(normalize2(el2.getAttribute("aria-label") || "")));
-    }
     function onClick(e) {
       const link = e.target && e.target.closest ? e.target.closest("a[href]") : null;
       if (!link) return;
@@ -922,23 +901,11 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         return;
       }
       if (url.origin !== location.origin) return;
-      const home = homeRedirect(url.pathname, url.search, settings);
-      if (home && onHomeFeed() && isBackArrow(link)) {
-        log.add("back arrow: Instagram\u2019s main page");
-        setTimeout(() => {
-          if (onHomeFeed()) leaveFor(HOME_FEED.mainPage, "followingFeed", false);
-        }, BACK_FALLBACK_MS);
-        return;
-      }
-      const verdict = home ? null : decide(url.pathname, allowedPath, settings, { tapped: true });
-      if (verdict && verdict.action === "allow") return;
+      const verdict = decide(url.pathname, allowedPath, settings, { tapped: true });
+      if (verdict.action === "allow") return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      if (home && onHomeFeed()) {
-        log.add("Home: back to the top");
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      } else if (home) leaveFor(home, "followingFeed", false);
-      else if (verdict.action === "redirect") leaveFor(verdict.to, verdict.toggle, false);
+      if (verdict.action === "redirect") leaveFor(verdict.to, verdict.toggle, false);
       else showBlocked(verdict.toggle, false);
     }
     function messageFor(toggle) {

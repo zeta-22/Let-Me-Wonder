@@ -5,14 +5,11 @@ If an item fails, open the filter settings → **Copy problem report** on that
 screen and paste it to Claude, saying which item failed.
 
 ## Home feed
-- [ ] **Following feed:** Home opens on the feed of people you follow, newest
-      first (Instagram's "Seguiti" feed), also when you tap the Home button.
-      (Switch: "Home: only people you follow".)
+- [ ] **Home:** the app opens on Instagram's own home page, with the stories
+      row at the top, and the Home button keeps you there.
 - [ ] **Keeps loading:** scroll down; new posts keep coming until you've seen
       them all, without getting stuck on the loading spinner, and without the
       same posts showing up again further down.
-- [ ] **Home on the Following feed:** tapping Home scrolls back to the top; the
-      page doesn't reload.
 - [ ] **No jumping back:** scrolling down, the feed never jumps back up to a
       post you already passed.
 - [ ] **Friends' reels:** reels from people you follow appear in the feed;
@@ -29,9 +26,10 @@ screen and paste it to Claude, saying which item failed.
       the left side to go back: you pass the ad again and land on the story before
       it. If an ad stays, tap the settings button on the right edge and copy a
       problem report.
-- [ ] **Locked switches:** in the settings, the switches are grey until you enter
-      the code; a wrong code says so; after closing and reopening they're locked
-      again. Copy problem report and Reload work without the code.
+- [ ] **Locked filters:** in the settings, App (problem report, updates,
+      reload) and Display work without the code; the Filters switches are grey
+      until you enter it; a wrong code says so; after closing and reopening
+      they're locked again.
 - [ ] **Suggestions:** no "Suggested for you" / "Consigli per te" carousels or
       suggested posts in the feed. After **"You're all caught up"**, nothing
       more loads.
@@ -48,9 +46,8 @@ screen and paste it to Claude, saying which item failed.
 
 ## Should still work
 - [ ] **DMs:** read, reply, send a photo.
-- [ ] **Stories:** the Following feed has no stories row; tap **←** next to
-      "Seguiti" to get Instagram's main page with the stories. Watch one, close
-      it, and you're back where you were in the feed; open another one.
+- [ ] **Stories:** tap one in the row at the top of Home. Watch it, close it,
+      and you're back where you were in the feed; open another one.
 - [ ] **Search:** find an account by name and open their profile.
 - [ ] **Your profile** opens normally.
 - [ ] **Posting:** the **+** button lets you post a photo.

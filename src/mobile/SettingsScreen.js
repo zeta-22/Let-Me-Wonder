@@ -1,5 +1,6 @@
-// The app's settings: one switch per rule, the problem report, updates, versions.
-// The switches are locked with a code (src/filter/lock.js) and lock again on closing.
+// The app's settings: the problem report, updates and reload, free for anyone; display
+// switches, free too; the filters, locked with a code (src/filter/lock.js) that locks
+// again on closing.
 
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -46,6 +47,21 @@ export default function SettingsScreen({ settings, onChange, onClose, onReport, 
     onClose();
   }
 
+  function switchRow(t, enabled) {
+    return (
+      <View key={t.id} style={[styles.row, { borderColor: theme.line }]}>
+        <Text style={[styles.rowLabel, { color: enabled ? theme.fg : theme.muted }]}>{t.label}</Text>
+        <Switch
+          value={!!settings[t.id]}
+          onValueChange={(value) => onChange({ [t.id]: value })}
+          disabled={!enabled}
+          trackColor={{ true: theme.accent }}
+          accessibilityLabel={t.label}
+        />
+      </View>
+    );
+  }
+
   async function checkForUpdates() {
     if (__DEV__ || !Updates.isEnabled) {
       setStatus('Updates are not set up in this version of the app.');
@@ -80,7 +96,20 @@ export default function SettingsScreen({ settings, onChange, onClose, onReport, 
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={[styles.section, { color: theme.muted }]}>Hide and block</Text>
+        <Text style={[styles.section, { color: theme.muted }]}>App</Text>
+        <Button label="Copy problem report" onPress={onReport} theme={theme} />
+        <Text style={[styles.hint, { color: theme.muted }]}>
+          Open the page where something slipped through, then tap this and paste the report to Claude. It shows the
+          page's structure only: usernames are masked, captions and messages are left out.
+        </Text>
+        <Button label="Check for updates" onPress={checkForUpdates} theme={theme} />
+        <Button label="Reload Instagram" onPress={onReload} theme={theme} />
+        {status ? <Text style={[styles.status, { color: theme.accent }]}>{status}</Text> : null}
+
+        <Text style={[styles.section, styles.sectionGap, { color: theme.muted }]}>Display</Text>
+        {TOGGLES.filter((t) => t.free).map((t) => switchRow(t, true))}
+
+        <Text style={[styles.section, styles.sectionGap, { color: theme.muted }]}>Filters</Text>
         {unlocked ? (
           <Text style={[styles.hint, { color: theme.muted }]}>Unlocked until you close the settings.</Text>
         ) : (
@@ -106,27 +135,7 @@ export default function SettingsScreen({ settings, onChange, onClose, onReport, 
             {lockMessage ? <Text style={[styles.status, { color: theme.accent }]}>{lockMessage}</Text> : null}
           </View>
         )}
-        {TOGGLES.map((t) => (
-          <View key={t.id} style={[styles.row, { borderColor: theme.line }]}>
-            <Text style={[styles.rowLabel, { color: unlocked ? theme.fg : theme.muted }]}>{t.label}</Text>
-            <Switch
-              value={!!settings[t.id]}
-              onValueChange={(value) => onChange({ [t.id]: value })}
-              disabled={!unlocked}
-              trackColor={{ true: theme.accent }}
-              accessibilityLabel={t.label}
-            />
-          </View>
-        ))}
-
-        <Button label="Copy problem report" onPress={onReport} theme={theme} />
-        <Text style={[styles.hint, { color: theme.muted }]}>
-          Open the page where something slipped through, then tap this and paste the report to Claude. It shows the
-          page's structure only: usernames are masked, captions and messages are left out.
-        </Text>
-        <Button label="Check for updates" onPress={checkForUpdates} theme={theme} />
-        <Button label="Reload Instagram" onPress={onReload} theme={theme} />
-        {status ? <Text style={[styles.status, { color: theme.accent }]}>{status}</Text> : null}
+        {TOGGLES.filter((t) => !t.free).map((t) => switchRow(t, unlocked))}
 
         <Text style={[styles.foot, { color: theme.muted }]}>
           App {appVersion} · filter {FILTER_VERSION} · rules {RULES_VERSION} · update {updateId}
@@ -154,6 +163,7 @@ const styles = StyleSheet.create({
   done: { fontSize: 16, fontWeight: '600' },
   content: { padding: 18, paddingBottom: 40 },
   section: { fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  sectionGap: { marginTop: 26 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
