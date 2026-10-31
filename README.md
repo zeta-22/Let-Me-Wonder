@@ -39,10 +39,8 @@ the moment it starts loading, and works in five layers:
    blocked links are stopped. If Instagram moves to a blocked page anyway, a
    **Blocked** screen covers it, pauses any video, and offers **Go back**. On a
    single reel (e.g. one sent in DMs), moving to a *different* reel is
-   blocked: that's what stops the endless swipe. Home opens Instagram's
-   **Following** feed (`/?variant=following`): only people you follow, newest
-   first. That page has no stories row: its back arrow (**← Seguiti**) is left
-   to Instagram and opens the main home page, which has the stories.
+   blocked: that's what stops the endless swipe. Home is Instagram's own home
+   page, with the stories row.
 4. **The feed keeps its own layout.** Instagram's feed keeps only the posts
    near the screen in the page, and holds the room of the others from their
    measured heights. So a hidden post keeps its exact size: it is *covered*
@@ -51,8 +49,7 @@ the moment it starts loading, and works in five layers:
    back by a post as you scrolled past. With the layout unchanged, Instagram's
    scrolling and its loading of more posts work as if the filter weren't there.
    A covered post's video is paused, and posts stay covered when you open a
-   story or a post from the feed. On the Following feed, Home scrolls back to
-   the top instead of reloading it. A test switch, **Small boxes for hidden
+   story or a post from the feed. A test switch, **Small boxes for hidden
    posts** (off by default), shrinks them to a small box and asks Instagram to
    measure the feed again; if Instagram doesn't, the feed jumps, so switch it off.
 5. **Ads between stories.** A story with the *Sponsored* label is paused and
@@ -62,10 +59,11 @@ the moment it starts loading, and works in five layers:
    to the story before the ad. On stories, the settings button sits on the right
    edge, so you can copy a problem report while an ad is on screen.
 
-**The switches are locked with a code**, the same on every phone, so turning the
-filter off takes a deliberate step. You can always look at them, copy a report or
-reload; changing them asks for the code, and they lock again when you close the
-settings. The code itself isn't in this public repository, only its fingerprint
+**The filters are locked with a code**, the same on every phone, so turning the
+filter off takes a deliberate step. The settings have three parts: **App** (copy a
+problem report, check for updates, reload), free for anyone; **Display** (switches
+that turn nothing back on, like Small boxes), free too; and **Filters**, which you can
+always see but only change with the code, until you close the settings. The code itself isn't in this public repository, only its fingerprint
 (`src/filter/lock.js`, which says how to change it). A four-digit code can be worked
 out from it by someone determined, and the app can be uninstalled: it's a brake, not
 a safe.

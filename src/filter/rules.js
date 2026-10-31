@@ -4,13 +4,14 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.10.31d';
+export const RULES_VERSION = '2026.10.31e';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
 // `covered` is the small label on a post this switch hides in a feed.
+// The switches are locked with a code (lock.js), except those marked `free`, which turn
+// nothing back on.
 export const TOGGLES = [
-  { id: 'followingFeed', label: 'Home: only people you follow', default: true, blocked: '' },
   { id: 'reelsTab', label: 'Reels tab and Reels pages', default: true, blocked: 'Reels are switched off.' },
   // Off by default: reels from people you follow stay in the feed (suggested ones are
   // hidden by "suggested"). Turn on to hide every reel in the home feed.
@@ -21,22 +22,8 @@ export const TOGGLES = [
   { id: 'reelSwipe', label: 'Swiping to the next reel', default: true, blocked: 'You watched the reel you opened. Moving on to other reels is switched off.' },
   // A test, off by default: hidden posts become a small box instead of keeping their size,
   // and Instagram is asked to measure the feed again. If it doesn't, the feed jumps.
-  { id: 'smallCovers', label: 'Small boxes for hidden posts (test: the feed may jump)', default: false },
+  { id: 'smallCovers', label: 'Small boxes for hidden posts (test: the feed may jump)', default: false, free: true },
 ];
-
-// Home shows Instagram's "Following" feed (only people you follow, newest first)
-// instead of "For you". Used when Instagram is opened on "/" and when you tap Home.
-// That page has no stories row: its back arrow (found by its icon's label, `backLabels`)
-// is left to Instagram, and leads to the main home page with the stories. If Instagram
-// doesn't move (it had nowhere to go back to), the filter opens `mainPage`: any
-// `variant` in the address stops the filter switching it to Following.
-export const HOME_FEED = {
-  toggle: 'followingFeed',
-  param: 'variant',
-  value: 'following',
-  backLabels: ['Back', 'Indietro', 'Atrás', 'Voltar', 'Retour', 'Zurück', 'Terug'],
-  mainPage: '/?variant=home',
-};
 
 // Kinds of page, recognised by the address path (the part after instagram.com).
 // Other rules use these names to apply only on some pages. First match wins.

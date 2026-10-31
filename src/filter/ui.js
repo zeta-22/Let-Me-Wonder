@@ -49,20 +49,28 @@ export function createUi(options) {
   const gear = el('button', { class: 'gear', type: 'button', 'aria-label': 'Let Me Wonder settings', html: SLIDERS_ICON, hidden: '' });
   gear.addEventListener('click', () => (options.onGear ? options.onGear() : openPanel()));
 
-  // Settings panel
-  const switches = options.toggles.map((t) => ({ id: t.id, label: t.label }));
-  switches.push({ id: 'showGear', label: 'Show the settings button' });
+  // Settings panel: the problem report and the switches that turn nothing back on are
+  // free; the filters are locked with the code.
   const inputs = {};
-  const list = el(
-    'ul',
-    { class: 'toggles' },
-    switches.map((s) => {
-      const input = el('input', { type: 'checkbox', role: 'switch', 'data-id': s.id });
-      inputs[s.id] = input;
-      input.addEventListener('change', () => options.onChange({ [s.id]: input.checked }));
-      return el('li', {}, [el('label', {}, [el('span', { text: s.label }), input])]);
-    }),
-  );
+  const lockedInputs = [];
+  function switchList(switches) {
+    return el(
+      'ul',
+      { class: 'toggles' },
+      switches.map((s) => {
+        const input = el('input', { type: 'checkbox', role: 'switch', 'data-id': s.id });
+        inputs[s.id] = input;
+        if (!s.free) lockedInputs.push(input);
+        input.addEventListener('change', () => options.onChange({ [s.id]: input.checked }));
+        return el('li', {}, [el('label', {}, [el('span', { text: s.label }), input])]);
+      }),
+    );
+  }
+  const freeList = switchList([
+    ...options.toggles.filter((t) => t.free),
+    { id: 'showGear', label: 'Show the settings button', free: true },
+  ]);
+  const list = switchList(options.toggles.filter((t) => !t.free));
   // The switches are locked until the code is entered, and lock again when the panel closes.
   const codeBox = el('input', {
     class: 'code', type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '12', 'aria-label': 'Code',
@@ -74,7 +82,7 @@ export function createUi(options) {
 
   function setLocked(locked, message) {
     unlocked = !locked;
-    for (const input of Object.values(inputs)) input.disabled = locked;
+    for (const input of lockedInputs) input.disabled = locked;
     lockMsg.textContent = message || (locked ? 'Locked: enter the code to change the switches.' : 'Unlocked until you close this.');
     lockRow.querySelector('.lock-entry').hidden = !locked;
     codeBox.value = '';
@@ -95,10 +103,12 @@ export function createUi(options) {
   const closeButton = el('button', { class: 'close', type: 'button', 'aria-label': 'Close', text: '✕' });
   const sheet = el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Let Me Wonder settings' }, [
     el('div', { class: 'sheet-head' }, [el('h2', { text: 'Let Me Wonder' }), closeButton]),
-    lockRow,
-    list,
     reportButton,
     status,
+    freeList,
+    el('h3', { class: 'section', text: 'Filters' }),
+    lockRow,
+    list,
     el('p', {
       class: 'foot',
       text: `Version ${options.version} · rules ${options.rulesVersion}. If you hide the settings button, open instagram.com/#lmw to get here.`,

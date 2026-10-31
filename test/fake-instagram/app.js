@@ -250,19 +250,11 @@
     io.observe(box.firstElementChild);
   }
 
-  // The Following feed (/?variant=following) is a page of its own, as on the real site:
-  // a "← Seguiti" header whose back arrow links to the main home page.
-  const followingHeader = () =>
-    new URLSearchParams(location.search).get('variant') === 'following'
-      ? `<header data-fx="following-header"><h1><a href="/" data-fx="following-back">
-          <svg aria-label="Indietro"></svg><span>Seguiti</span></a></h1></header>`
-      : '';
-
   function viewFor(path) {
     let m;
-    if (path === '/' && params.get('fake') === 'endless') return followingHeader() + views.endless();
-    if (path === '/' && params.get('fake') === 'virtual') return followingHeader() + views.virtual();
-    if (path === '/') return followingHeader() + views.home();
+    if (path === '/' && params.get('fake') === 'endless') return views.endless();
+    if (path === '/' && params.get('fake') === 'virtual') return views.virtual();
+    if (path === '/') return views.home();
     if (path === '/notifications/') return views.notifications();
     if (path === '/explore/') return views.explore();
     if (path.startsWith('/explore/search/')) return views.search();
@@ -334,9 +326,6 @@
     const url = new URL(a.getAttribute('href'), location.href);
     if (url.origin !== location.origin) return;
     e.preventDefault();
-    // With &back=dead, the Following page's back arrow goes nowhere, as when Instagram
-    // goes back and there's no earlier page (the app opened straight on Following).
-    if (a.dataset.fx === 'following-back' && params.get('back') === 'dead') return;
     navigate(url.pathname + url.search);
   });
   // Stories open over the feed, which stays in the page, where it was, underneath.

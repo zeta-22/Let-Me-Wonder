@@ -56,8 +56,8 @@ export async function open(browser, path, { settings, app } = {}) {
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  // The filter may switch "/" to the Following feed while the page loads: that's a
-  // second navigation, so wait for whichever page ends up loaded.
+  // The filter may send a page elsewhere while it loads (e.g. the swipeable reels feed to
+  // one reel): that's a second navigation, so wait for whichever page ends up loaded.
   await page.goto(BASE + path).catch((e) => {
     if (!/interrupted|ERR_ABORTED/i.test(e.message)) throw e;
   });
@@ -97,7 +97,10 @@ export const tapGoBack = (page) => inUi(page, "root.querySelector('.blocked .pri
 export const gearShown = (page) => inUi(page, "return !root.querySelector('.gear').hidden");
 export const panelShown = (page) => inUi(page, "return !root.querySelector('.backdrop').hidden");
 export const tapGear = (page) => inUi(page, "root.querySelector('.gear').click()");
-export const switchesLocked = (page) => inUi(page, "return [...root.querySelectorAll('.toggles input')].every((i) => i.disabled)");
+// The filters are locked; the display switches (Small boxes, Show the settings button) never are.
+export const switchesLocked = (page) =>
+  inUi(page, "const all = [...root.querySelectorAll('.toggles input')]; const free = ['smallCovers', 'showGear']; " +
+    "return all.filter((i) => !free.includes(i.dataset.id)).every((i) => i.disabled) && all.filter((i) => free.includes(i.dataset.id)).every((i) => !i.disabled)");
 export const lockMessage = (page) => inUi(page, "return root.querySelector('.lock-msg').textContent");
 export const enterCode = (page, code) =>
   inUi(page, "root.querySelector('.code').value = arg; root.querySelector('.unlock').click()", code);

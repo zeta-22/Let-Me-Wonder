@@ -553,6 +553,33 @@ Tests: going back through an ad lands on the story before it (with the controls,
 with the arrow keys only); the panel's lock (wrong code, right code, locked again after
 closing, no codes in the report); the lock itself (SHA-256, digits only, the wait). 50 pass.
 
+### Stage 3, round 7: back to the classic home; settings in three parts (2026-10-31)
+What you said (on 0.3.5): open the app on the classic home (the one with the stories),
+not on the Following feed, which you don't use. And keep what everyone may need (the
+problem report, updates, reload, …) out of the locked filters, so only the filters that
+remove reels and the other addictive parts are locked.
+
+**Following feed removed.** The "Home: only people you follow" switch, the switch of
+`/` to `/?variant=following` (`HOME_FEED`, `homeRedirect`), the Home-tap and back-arrow
+handling on that page, and the app's start address are gone. The app opens on
+`https://www.instagram.com/`, and Home is Instagram's own. A saved `followingFeed` is
+ignored (unknown switches are). If you open Instagram's own Following feed from its menu,
+it's left as it is.
+
+**Settings in three parts**, in the app and in the Safari panel:
+- **App:** Copy problem report, Check for updates, Reload Instagram. Free for anyone.
+- **Display:** switches that turn nothing back on (`TOGGLES[].free`): Small boxes, and
+  in Safari "Show the settings button". Free too.
+- **Filters:** the rest, locked with the code as before.
+
+Tests: the home page opens as it is, with the stories, and Home keeps it there; the
+panel's display switches move without the code while the filters stay locked. The
+Following-feed checks are removed. 46 pass.
+
+On the classic home, Instagram mixes in suggested posts: they're covered at their size
+("Suggestion hidden"), so there can be more empty cards than on the Following feed. If
+that's too much, the Small boxes test switch is the thing to try.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

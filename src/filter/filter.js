@@ -14,8 +14,8 @@
 //      stays exactly Instagram's: its list, which keeps only the posts near the
 //      screen, and its loading of more posts work as if the filter weren't there.
 
-import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, HOME_FEED, STORIES } from './rules.js';
-import { decide, homeRedirect, pageOf } from './routes.js';
+import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, STORIES } from './rules.js';
+import { decide, pageOf } from './routes.js';
 import { withSaved } from './settings.js';
 import { buildReport, outlineOf } from './report.js';
 import { createLog } from './log.js';
@@ -31,7 +31,6 @@ const COVER_ATTR = 'data-lmw-cover';
 const NO_GEAR_PAGES = ['direct', 'login'];
 const HIDE_CSS = '{display:none!important}';
 const INVISIBLE_CSS = '{visibility:hidden!important;pointer-events:none!important}'; // keeps its size
-const BACK_FALLBACK_MS = 1500; // the back arrow didn't move Instagram this long after a tap
 const SMALL_COVER_PX = 36; // a hidden post's box with the "Small boxes" test switch on
 const STORY_RETRY_MS = 1500; // a story ad still showing this long after a skip: try again
 const STORY_MAX_TRIES = 3;
@@ -81,7 +80,6 @@ for (const rule of LABEL_RULES) {
   }
 }
 const MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
-const backLabels = new Set(HOME_FEED.backLabels.map(normalize));
 const nextLabels = new Set(STORIES.nextLabels.map(normalize));
 const previousLabels = new Set(STORIES.previousLabels.map(normalize));
 
@@ -186,7 +184,7 @@ function start() {
 
   // --- pages and navigation ---------------------------------------------------
   function pageLabel() {
-    const variant = page === 'home' && new URLSearchParams(location.search).get(HOME_FEED.param);
+    const variant = page === 'home' && new URLSearchParams(location.search).get('variant'); // Instagram's feed menu
     return page + (variant ? ` (${variant})` : '');
   }
 
@@ -211,20 +209,12 @@ function start() {
       notePage();
       return;
     }
-    const firstCheck = lastPath === null && navCount === 0 && !allowedPath;
     if (lastPath !== null) navCount++;
     lastPath = path;
     const next = pageOf(path);
     if (next !== page) keepCovered(page);
     page = next;
     notePage();
-    // Opened on the home feed: show the Following feed instead (only when the page loads,
-    // so choosing "For you" in Instagram's own menu still works).
-    const home = firstCheck && homeRedirect(path, location.search, settings);
-    if (home) {
-      leaveFor(home, 'followingFeed', true);
-      return;
-    }
     const verdict = decide(path, allowedPath, settings);
     if (verdict.action === 'redirect') {
       leaveFor(verdict.to, verdict.toggle, true);
@@ -241,15 +231,6 @@ function start() {
     scanAll();
   }
 
-  function onHomeFeed() {
-    return page === 'home' && new URLSearchParams(location.search).get(HOME_FEED.param) === HOME_FEED.value;
-  }
-
-  function isBackArrow(link) {
-    const labelled = [link, ...link.querySelectorAll('[aria-label]')];
-    return labelled.some((el) => backLabels.has(normalize(el.getAttribute('aria-label') || '')));
-  }
-
   function onClick(e) {
     const link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!link) return;
@@ -260,27 +241,11 @@ function start() {
       return;
     }
     if (url.origin !== location.origin) return;
-    const home = homeRedirect(url.pathname, url.search, settings);
-    // The Following feed's back arrow: Instagram takes you to its main page, with the
-    // stories. If it doesn't move (nothing to go back to), the filter opens that page.
-    if (home && onHomeFeed() && isBackArrow(link)) {
-      log.add('back arrow: Instagram’s main page');
-      setTimeout(() => {
-        if (onHomeFeed()) leaveFor(HOME_FEED.mainPage, 'followingFeed', false);
-      }, BACK_FALLBACK_MS);
-      return;
-    }
-    const verdict = home ? null : decide(url.pathname, allowedPath, settings, { tapped: true });
-    if (verdict && verdict.action === 'allow') return;
+    const verdict = decide(url.pathname, allowedPath, settings, { tapped: true });
+    if (verdict.action === 'allow') return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    // Home on the Following feed: back to the top, like Instagram's own Home button.
-    // Reloading would start the feed over and add a copy of it to go Back through.
-    if (home && onHomeFeed()) {
-      log.add('Home: back to the top');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (home) leaveFor(home, 'followingFeed', false); // the Home button: Following feed
-    else if (verdict.action === 'redirect') leaveFor(verdict.to, verdict.toggle, false);
+    if (verdict.action === 'redirect') leaveFor(verdict.to, verdict.toggle, false);
     else showBlocked(verdict.toggle, false);
   }
 
