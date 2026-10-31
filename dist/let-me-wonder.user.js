@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.8
+// @version      0.3.9
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,12 +17,12 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.31g";
+  var RULES_VERSION = "2026.10.31h";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
     // hidden by "suggested"). Turn on to hide every reel in the home feed.
-    { id: "feedReels", label: "Reels in the home feed, also from people you follow", default: false, blocked: "Reels are switched off.", covered: "Reel hidden" },
+    { id: "feedReels", label: "Reels in the home feed, also from people you follow", default: false, free: true, blocked: "Reels are switched off.", covered: "Reel hidden" },
     { id: "explore", label: "Explore grid", default: true, blocked: "Explore is switched off. Searching for accounts still works." },
     { id: "suggested", label: "Suggested posts and accounts", default: true, blocked: "Suggestions are switched off.", covered: "Suggestion hidden" },
     { id: "ads", label: "Ads and sponsored posts", default: true, blocked: "Ads are switched off.", covered: "Ad hidden" },
@@ -729,7 +729,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.8" : "dev";
+  var VERSION = true ? "0.3.9" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";

@@ -455,6 +455,11 @@ test('settings panel (Safari): the switches are locked with the code, and lock a
   assert.equal(await flipSwitch(page, 'ads'), true, 'a locked switch doesn’t move');
   assert.equal(await flipSwitch(page, 'smallCovers'), true, 'display switches stay free: they turn nothing back on');
   assert.equal(await flipSwitch(page, 'smallCovers'), false);
+  assert.equal(await flipSwitch(page, 'feedReels'), true, 'so does the one for friends’ reels');
+  assert.equal(await visible(page, 'post-reel'), false, 'and it applies at once');
+  assert.equal(await flipSwitch(page, 'feedReels'), false);
+  await expectVisible(page, ['post-reel'], true);
+  await expectVisible(page, ['suggested-post'], false); // suggestions stay hidden: that switch is locked
   assert.equal(await visible(page, 'ad-en'), false);
   await enterCode(page, '1357');
   assert.equal(await switchesLocked(page), true);

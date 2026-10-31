@@ -4,18 +4,19 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.10.31g';
+export const RULES_VERSION = '2026.10.31h';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
 // `covered` is the small label on a post this switch hides in a feed.
-// The switches are locked with a code (lock.js), except those marked `free`, which turn
-// nothing back on.
+// The switches are locked with a code (lock.js), except those marked `free`: display
+// choices that turn nothing back on, and friends' reels (suggested reels stay hidden by
+// "suggested", which is locked).
 export const TOGGLES = [
   { id: 'reelsTab', label: 'Reels tab and Reels pages', default: true, blocked: 'Reels are switched off.' },
   // Off by default: reels from people you follow stay in the feed (suggested ones are
   // hidden by "suggested"). Turn on to hide every reel in the home feed.
-  { id: 'feedReels', label: 'Reels in the home feed, also from people you follow', default: false, blocked: 'Reels are switched off.', covered: 'Reel hidden' },
+  { id: 'feedReels', label: 'Reels in the home feed, also from people you follow', default: false, free: true, blocked: 'Reels are switched off.', covered: 'Reel hidden' },
   { id: 'explore', label: 'Explore grid', default: true, blocked: 'Explore is switched off. Searching for accounts still works.' },
   { id: 'suggested', label: 'Suggested posts and accounts', default: true, blocked: 'Suggestions are switched off.', covered: 'Suggestion hidden' },
   { id: 'ads', label: 'Ads and sponsored posts', default: true, blocked: 'Ads are switched off.', covered: 'Ad hidden' },

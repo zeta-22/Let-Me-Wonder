@@ -627,6 +627,15 @@ posting feature, nothing changed in the app.
 Tests: on /create/select/ and /stories/create/, the crop area, file picker, people to tag
 and "Condividi" stay visible, no settings button, no zoom; back on Home, zoom again. 48 pass.
 
+### Stage 3, round 10: friends' reels without the code (2026-10-31)
+What you said: put the friends' reels switch with the things that don't need the code.
+
+"Reels in the home feed, also from people you follow" is now `free`, in Display. It only
+decides whether reels from accounts you follow show: reels from others carry "Suggeriti
+per te" and stay hidden by "Suggested posts and accounts", which is still locked, and so
+are the Reels tab and reel-to-reel swiping. Test: the switch moves without the code and
+applies at once, while a suggested post stays hidden. 48 pass. (0.3.9)
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

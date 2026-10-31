@@ -70,9 +70,11 @@ Safari add-ons may not run in that mode, so test it:
     the page's *structure* and a short timeline in numbers: usernames are
     replaced with `{user}`, captions and DM messages are left out, and anything
     you've typed is never included. Skim it before sending if you like.
-  - **Display**, for anyone: "Small boxes for hidden posts" (a test, off: if
-    the feed starts jumping with it, turn it off), "Pinch to zoom photos and
-    stories" (on) and "Show the settings button".
+  - **Display**, for anyone: "Reels in the home feed, also from people you
+    follow" (off: friends' reels show; on: every reel is hidden; reels from
+    accounts you don't follow stay hidden either way), "Small boxes for hidden
+    posts" (a test, off: if the feed starts jumping with it, turn it off),
+    "Pinch to zoom photos and stories" (on) and "Show the settings button".
   - **Filters**: what hides reels, Explore, suggestions and ads. You can see
     them, but changing them takes the **code** (the owner has it). They stay
     unlocked until you close the settings. After 5 wrong codes, wait 30 seconds.

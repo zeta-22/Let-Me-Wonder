@@ -1,6 +1,6 @@
 {
   "name": "let-me-wonder",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "description": "Instagram without the addictive parts: no Reels, Explore, suggestions or ads.",
   "main": "index.js",
