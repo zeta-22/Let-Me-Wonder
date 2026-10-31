@@ -205,6 +205,13 @@
       }
     }
     window.addEventListener('scroll', update, { passive: true });
+    // With &remeasure=resize, the list measures its posts again on a resize, like many do.
+    if (params.get('remeasure') === 'resize') {
+      window.addEventListener('resize', () => {
+        for (const [i, el] of shown) measured.set(i, el.offsetHeight);
+        update();
+      });
+    }
     update();
   }
 
@@ -341,11 +348,44 @@
     );
   }
 
+  // An ad between stories: the advertiser, "Sponsorizzato", the ad's own link, and the
+  // viewer's "next" control. With &storynext=none there's no next control, only the
+  // right-arrow key. Moving on shows a friend's story.
+  function openStoryAd() {
+    history.pushState({}, '', '/stories/shop_brand/999/');
+    const noNext = params.get('storynext') === 'none';
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      `<div role="dialog" data-fx="story-viewer" style="position:fixed;inset:0;background:#000;color:#fff">
+        <div data-fx="story-content">
+          <div><a href="/shop_brand/">shop_brand</a><span>Sponsorizzato</span></div>
+          <video muted playsinline data-fx="story-ad-video"></video>
+          <a href="https://shop.example/buy" data-fx="story-cta">Scopri di più</a>
+        </div>
+        ${noNext ? '' : '<div role="button" aria-label="Avanti" data-fx="story-next"><svg aria-label="Avanti"></svg></div>'}
+      </div>`,
+    );
+    const viewer = document.querySelector('[data-fx="story-viewer"]');
+    window.fakeStoryMoves = 0;
+    const next = () => {
+      window.fakeStoryMoves++;
+      history.replaceState({}, '', '/stories/friend_two/222/');
+      viewer.querySelector('[data-fx="story-content"]').innerHTML =
+        '<div><a href="/friend_two/">friend_two</a><span>3 h</span></div><video muted playsinline data-fx="story-friend-video"></video>';
+    };
+    const button = viewer.querySelector('[data-fx="story-next"]');
+    if (button) button.addEventListener('click', next);
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' && viewer.isConnected) next();
+    });
+    viewer.querySelector('[data-fx="story-cta"]').addEventListener('click', () => (window.fakeCtaTapped = true));
+  }
+
   window.addEventListener('popstate', () => {
     const story = document.querySelector('[data-fx="story-viewer"]');
     if (story) story.remove();
     else render();
   });
-  window.fake = { navigate, openStory };
+  window.fake = { navigate, openStory, openStoryAd };
   render();
 })();

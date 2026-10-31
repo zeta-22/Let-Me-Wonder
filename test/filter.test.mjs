@@ -123,6 +123,55 @@ test('if the back arrow goes nowhere, the filter opens Instagram’s main page i
   await expectVisible(page, ['stories'], true);
 });
 
+test('an ad between stories is skipped with Instagram’s own next button, never the ad’s link', async () => {
+  const page = await open(browser, '/');
+  await page.evaluate(() => window.fake.openStoryAd());
+  await page.waitForFunction(() => window.fakeStoryMoves === 1, null, { timeout: 3000 });
+  assert.equal(await path(page), '/stories/friend_two/222/', 'on to the next story');
+  assert.equal(await page.evaluate(() => window.fakeCtaTapped), undefined, 'the ad’s own link is never tapped');
+  await page.waitForTimeout(1000);
+  assert.equal(await page.evaluate(() => window.fakeStoryMoves), 1, 'the friend’s story that follows isn’t skipped');
+  assert.equal(await gearShown(page), true, 'the settings button is there, for a report during an ad');
+  const report = await page.evaluate(() => window.__LMW__.buildReport());
+  assert.match(report, /story ad: skipped with the next button/);
+  assert.match(report, /the story viewer when an ad showed:\n {2}div role=dialog/);
+  assert.ok(!/shop_brand|friend_two/.test(report), 'no names in the report');
+});
+
+test('without a next button, a story ad is skipped with the right-arrow key; with Ads off it stays', async () => {
+  const page = await open(browser, '/?storynext=none');
+  await page.evaluate(() => window.fake.openStoryAd());
+  await page.waitForFunction(() => window.fakeStoryMoves === 1, null, { timeout: 3000 });
+  assert.equal(await path(page), '/stories/friend_two/222/');
+  await page.waitForTimeout(1000);
+  assert.equal(await page.evaluate(() => window.fakeStoryMoves), 1, 'only the ad is skipped, not the story after it');
+
+  const off = await open(browser, '/', { settings: { ads: false } });
+  await off.evaluate(() => window.fake.openStoryAd());
+  await off.waitForTimeout(1000);
+  assert.equal(await off.evaluate(() => window.fakeStoryMoves), 0);
+});
+
+test('a friend’s story is never skipped, even with an ad hidden in the feed underneath', async () => {
+  const page = await open(browser, '/');
+  await page.evaluate(() => window.fake.openStory());
+  await page.waitForTimeout(1200);
+  assert.equal(await path(page), '/stories/friend_one/111/');
+  assert.doesNotMatch(await page.evaluate(() => window.__LMW__.buildReport()), /story ad/);
+});
+
+test('"Small boxes" test switch: hidden reels shrink, and a feed that measures again on a resize doesn’t jump', async () => {
+  const settings = { feedReels: true, smallCovers: true };
+  const page = await open(browser, '/?fake=virtual&remeasure=resize', { settings });
+  await page.waitForTimeout(800); // the first reel's link arrives, then the filter asks for a new measure
+  assert.ok((await height(page, 'v1')) <= 40, 'a small box');
+  await expectVisible(page, ['v1'], false);
+  assert.deepEqual(await scrollAndFindJumps(page, 70), [], 'no jump');
+  // Why it's only a test: a feed that never measures again still jumps with small boxes.
+  const stubborn = await open(browser, '/?fake=virtual', { settings });
+  assert.notDeepEqual(await scrollAndFindJumps(stubborn, 70), []);
+});
+
 test('a story opened from the feed leaves hidden reels hidden, so the feed doesn’t move underneath', async () => {
   const page = await open(browser, '/', { settings: { feedReels: true } });
   const where = () => page.evaluate(() => ({ y: scrollY, h: document.documentElement.scrollHeight }));

@@ -23,6 +23,7 @@ const signed = (n) => (n > 0 ? '+' : '') + n;
 export function createLog() {
   const previous = loadPrevious();
   const lines = [];
+  const notes = {}; // title -> lines: a longer note, like the outline of a story ad
   const start = Date.now();
   let lastY = 0;
   let lastHeight = 0;
@@ -33,11 +34,28 @@ export function createLog() {
     const s = ((Date.now() - start) / 1000).toFixed(1);
     lines.push(`${s}s y=${Math.round(window.scrollY)} ${text}`);
     if (lines.length > MAX_LINES) lines.shift();
+    save();
+  }
+
+  function save() {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ start, lines }));
+      localStorage.setItem(STORE_KEY, JSON.stringify({ start, lines, notes }));
     } catch (e) {
       /* no storage: only this page's timeline is in the report */
     }
+  }
+
+  function note(title, noteLines) {
+    notes[title] = noteLines;
+    save();
+  }
+
+  // This page's notes, and the page load before's for titles this one doesn't have.
+  function allNotes() {
+    const out = Object.entries(notes).map(([title, l]) => ({ title, lines: l }));
+    const old = (previous && previous.notes) || {};
+    for (const [title, l] of Object.entries(old)) if (!notes[title]) out.push({ title: `${title} (page load before)`, lines: l });
+    return out;
   }
 
   // The page load before this one: its lines, and how long before this one it began.
@@ -78,5 +96,5 @@ export function createLog() {
   window.addEventListener('touchcancel', () => (fingers = 0), passive);
   document.addEventListener('visibilitychange', () => add(document.hidden ? 'app in the background' : 'app back on screen'));
 
-  return { add, checkFeed, before, lines: () => lines.slice() };
+  return { add, note, checkFeed, before, notes: allNotes, lines: () => lines.slice() };
 }

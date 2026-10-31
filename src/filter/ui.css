@@ -73,6 +73,11 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   padding: 0;
   pointer-events: auto;
 }
+
+.gear[data-place='side'] {
+  top: 40%;
+  bottom: auto;
+}
 .gear svg { width: 18px; height: 18px; }
 
 /* Settings panel */

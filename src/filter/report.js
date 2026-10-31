@@ -170,7 +170,7 @@ function signature(el) {
 }
 
 function walk(el, depth, ctx) {
-  if (ctx.lines.length >= MAX_LINES || skipped(el)) return;
+  if (ctx.lines.length >= (ctx.maxLines || MAX_LINES) || skipped(el)) return;
   const indent = '  '.repeat(depth);
   ctx.lines.push(indent + describe(el, ctx));
   // Don't go inside icons, or deeper than MAX_DEPTH.
@@ -206,7 +206,15 @@ function cssMatches() {
   return out;
 }
 
-export function buildReport({ version, rulesVersion, host, settings, page, events = [], eventsBefore = null }) {
+// The same anonymous outline, for one part of the page only (e.g. the story viewer when
+// an ad showed there, kept for the next report).
+export function outlineOf(el, maxLines = 120) {
+  const ctx = { lines: [], mask: makeMasker(collectUsernames()), allowText: true, maxLines, repeats: countRepeats(el) };
+  walk(el, 0, ctx);
+  return ctx.lines;
+}
+
+export function buildReport({ version, rulesVersion, host, settings, page, events = [], eventsBefore = null, notes = [] }) {
   const mask = makeMasker(collectUsernames());
   const hiddenCounts = {};
   for (const el of document.querySelectorAll('[' + HIDE_ATTR + ']')) {
@@ -228,6 +236,7 @@ export function buildReport({ version, rulesVersion, host, settings, page, event
     ...(eventsBefore
       ? [`the page load before this one (it began ${eventsBefore.secondsEarlier} s earlier):`, ...eventsBefore.lines.map((e) => '  ' + e)]
       : []),
+    ...notes.flatMap((n) => [`${n.title}:`, ...n.lines.map((l) => '  ' + l)]),
     '---',
   ];
   const ctx = {

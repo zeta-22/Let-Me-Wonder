@@ -24,7 +24,7 @@ Personal project. The full plan is in [docs/PLAN.md](docs/PLAN.md).
 
 Instagram's website is a *single-page app*: it changes pages without reloading
 and keeps adding posts as you scroll. The filter runs inside that page, from
-the moment it starts loading, and works in four layers:
+the moment it starts loading, and works in five layers:
 
 1. **CSS, instantly.** Things recognisable by their link address are hidden
    before they're ever drawn, e.g. any link ending in `/reels/` (the Reels tab)
@@ -52,7 +52,13 @@ the moment it starts loading, and works in four layers:
    scrolling and its loading of more posts work as if the filter weren't there.
    A covered post's video is paused, and posts stay covered when you open a
    story or a post from the feed. On the Following feed, Home scrolls back to
-   the top instead of reloading it.
+   the top instead of reloading it. A test switch, **Small boxes for hidden
+   posts** (off by default), shrinks them to a small box and asks Instagram to
+   measure the feed again; if Instagram doesn't, the feed jumps, so switch it off.
+5. **Ads between stories.** A story with the *Sponsored* label is paused and
+   skipped with the story viewer's own "next" control (or the right-arrow key),
+   never with the ad's buttons. On stories, the settings button sits on the right
+   edge, so you can copy a problem report while an ad is on screen.
 
 It detects things by **stable signals** (link addresses such as `/reels/`,
 `/explore/` and `/reel/<id>`, `<article>` posts, roles, aria-labels, and label
