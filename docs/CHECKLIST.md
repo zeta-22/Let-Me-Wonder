@@ -14,10 +14,10 @@ screen and paste it to Claude, saying which item failed.
       post you already passed.
 - [ ] **Friends' reels:** reels from people you follow appear in the feed;
       suggested reels don't. (To hide every reel, turn on "Reels in the home
-      feed, also from people you follow": each one then becomes an empty card,
-      the same size, with a small grey "Reel hidden" on it. To try small boxes
-      instead, turn on "Small boxes for hidden posts"; if the feed starts
-      jumping again, turn it off.)
+      feed, also from people you follow", in Display, no code needed: each one
+      then becomes an empty card, the same size, with a small grey "Reel
+      hidden" on it. To try small boxes instead, turn on "Small boxes for
+      hidden posts"; if the feed starts jumping again, turn it off.)
 
 ## Should be gone
 - [ ] **Reels tab:** the bottom bar has no Reels button.

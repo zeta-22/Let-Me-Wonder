@@ -99,9 +99,10 @@ export const tapGoBack = (page) => inUi(page, "root.querySelector('.blocked .pri
 export const gearShown = (page) => inUi(page, "return !root.querySelector('.gear').hidden");
 export const panelShown = (page) => inUi(page, "return !root.querySelector('.backdrop').hidden");
 export const tapGear = (page) => inUi(page, "root.querySelector('.gear').click()");
-// The filters are locked; the display switches (Small boxes, Show the settings button) never are.
+// The filters are locked; the free switches (friends' reels, Small boxes, Pinch to zoom, Show the
+// settings button) never are.
 export const switchesLocked = (page) =>
-  inUi(page, "const all = [...root.querySelectorAll('.toggles input')]; const free = ['smallCovers', 'pinchZoom', 'showGear']; " +
+  inUi(page, "const all = [...root.querySelectorAll('.toggles input')]; const free = ['feedReels', 'smallCovers', 'pinchZoom', 'showGear']; " +
     "return all.filter((i) => !free.includes(i.dataset.id)).every((i) => i.disabled) && all.filter((i) => free.includes(i.dataset.id)).every((i) => !i.disabled)");
 export const lockMessage = (page) => inUi(page, "return root.querySelector('.lock-msg').textContent");
 export const enterCode = (page, code) =>
