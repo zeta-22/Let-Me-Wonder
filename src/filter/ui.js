@@ -23,6 +23,7 @@ function el(tag, attrs, children) {
 }
 
 // options: { toggles, version, rulesVersion, getSettings, onChange(partial), getReport(),
+//            tryCode(code) -> { ok, wait } (the lock on the switches, see lock.js),
 //            onGear() (optional: what the settings button does instead of opening the panel) }
 export function createUi(options) {
   const host = el('div', { id: 'lmw-ui' });
@@ -62,11 +63,39 @@ export function createUi(options) {
       return el('li', {}, [el('label', {}, [el('span', { text: s.label }), input])]);
     }),
   );
+  // The switches are locked until the code is entered, and lock again when the panel closes.
+  const codeBox = el('input', {
+    class: 'code', type: 'password', inputmode: 'numeric', autocomplete: 'off', maxlength: '12', 'aria-label': 'Code',
+  });
+  const unlockButton = el('button', { class: 'secondary unlock', type: 'button', text: 'Unlock' });
+  const lockMsg = el('p', { class: 'lock-msg', 'aria-live': 'polite' });
+  const lockRow = el('div', { class: 'lock' }, [lockMsg, el('div', { class: 'lock-entry' }, [codeBox, unlockButton])]);
+  let unlocked = false;
+
+  function setLocked(locked, message) {
+    unlocked = !locked;
+    for (const input of Object.values(inputs)) input.disabled = locked;
+    lockMsg.textContent = message || (locked ? 'Locked: enter the code to change the switches.' : 'Unlocked until you close this.');
+    lockRow.querySelector('.lock-entry').hidden = !locked;
+    codeBox.value = '';
+  }
+
+  function tryUnlock() {
+    const result = options.tryCode(codeBox.value);
+    if (result.ok) setLocked(false);
+    else setLocked(true, result.wait ? `Too many tries: wait ${result.wait} s.` : 'Wrong code.');
+  }
+  unlockButton.addEventListener('click', tryUnlock);
+  codeBox.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') tryUnlock();
+  });
+
   const status = el('p', { class: 'status', 'aria-live': 'polite' });
   const reportButton = el('button', { class: 'secondary', type: 'button', text: 'Copy problem report' });
   const closeButton = el('button', { class: 'close', type: 'button', 'aria-label': 'Close', text: '✕' });
   const sheet = el('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Let Me Wonder settings' }, [
     el('div', { class: 'sheet-head' }, [el('h2', { text: 'Let Me Wonder' }), closeButton]),
+    lockRow,
     list,
     reportButton,
     status,
@@ -92,6 +121,7 @@ export function createUi(options) {
   function openPanel() {
     const s = options.getSettings();
     for (const [id, input] of Object.entries(inputs)) input.checked = !!s[id];
+    setLocked(true);
     status.textContent = '';
     const old = sheet.querySelector('.manual');
     if (old) old.remove();
@@ -100,6 +130,7 @@ export function createUi(options) {
   }
 
   function closePanel() {
+    setLocked(true);
     backdrop.hidden = true;
     refreshGear();
   }

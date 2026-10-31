@@ -25,8 +25,13 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Reels tab:** the bottom bar has no Reels button.
 - [ ] **Ads:** scroll about 30 posts; nothing marked *Sponsored*.
 - [ ] **Ads in stories:** watch several stories in a row; an ad (*Sponsorizzato*)
-      disappears by itself within a moment, and the story after it plays. If one
-      stays, tap the settings button on the right edge and copy a problem report.
+      disappears by itself within a moment, and the story after it plays. Then tap
+      the left side to go back: you pass the ad again and land on the story before
+      it. If an ad stays, tap the settings button on the right edge and copy a
+      problem report.
+- [ ] **Locked switches:** in the settings, the switches are grey until you enter
+      the code; a wrong code says so; after closing and reopening they're locked
+      again. Copy problem report and Reload work without the code.
 - [ ] **Suggestions:** no "Suggested for you" / "Consigli per te" carousels or
       suggested posts in the feed. After **"You're all caught up"**, nothing
       more loads.

@@ -525,6 +525,34 @@ Tests: story ad skipped with the next button (the ad's link never tapped, the fo
 story not skipped, the outline in the report without names); with the arrow key; not with
 Ads off; a friend's story never skipped; small boxes on a feed that measures again. 44 pass.
 
+### Stage 3, round 6: going back past a story ad, locked switches (2026-10-31)
+What you said (on 0.3.4): everything works; but when an ad between stories is skipped,
+going back lands on the ad, which skips forward again, so the story before it can't be
+reached. And: lock the switches with a code, the same on every phone, for good, so only
+you can turn the filter off.
+
+**Going back past an ad.** The filter now notes which way you're going through stories:
+your own taps (left third of the screen: back), swipes (to the right: back) and arrow
+keys, never its own skips. An ad met within 3 s of going back is skipped backwards: with
+the "previous" control (`STORIES.previousLabels`), looked for next to the "next" one and
+never at the top of the screen (where an "Indietro" would leave the stories), or else
+the left-arrow key. A retry keeps the first direction.
+
+**Locked switches.** `src/filter/lock.js`: the code's fingerprint (SHA-256 of a salt +
+the code); the code itself is in no file, commit or document of this public repository.
+Its own small SHA-256, because the app has no crypto library built in (adding one would
+mean a new APK); it matches Node's on the standard test vectors. After 5 wrong codes in a
+row, a 30 s wait. Both the Safari panel and the app's settings show the switches greyed
+out with a code box; they unlock until the settings close. Copy problem report, Check for
+updates and Reload stay free. The tests use a code of their own: `test/helpers.mjs` puts
+its fingerprint in their copy of the filter. Limits: four digits can be worked out from
+the fingerprint by someone determined, and the app or the Userscripts extension can be
+removed. It's a brake, not a safe.
+
+Tests: going back through an ad lands on the story before it (with the controls, and
+with the arrow keys only); the panel's lock (wrong code, right code, locked again after
+closing, no codes in the report); the lock itself (SHA-256, digits only, the wait). 50 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

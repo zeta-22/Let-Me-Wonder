@@ -56,9 +56,19 @@ the moment it starts loading, and works in five layers:
    posts** (off by default), shrinks them to a small box and asks Instagram to
    measure the feed again; if Instagram doesn't, the feed jumps, so switch it off.
 5. **Ads between stories.** A story with the *Sponsored* label is paused and
-   skipped with the story viewer's own "next" control (or the right-arrow key),
-   never with the ad's buttons. On stories, the settings button sits on the right
+   skipped with the story viewer's own controls (or the arrow keys), never with
+   the ad's buttons. It's skipped the way you were going: forward, or, if you
+   were going back (a tap on the left of the screen, a swipe to the right), back
+   to the story before the ad. On stories, the settings button sits on the right
    edge, so you can copy a problem report while an ad is on screen.
+
+**The switches are locked with a code**, the same on every phone, so turning the
+filter off takes a deliberate step. You can always look at them, copy a report or
+reload; changing them asks for the code, and they lock again when you close the
+settings. The code itself isn't in this public repository, only its fingerprint
+(`src/filter/lock.js`, which says how to change it). A four-digit code can be worked
+out from it by someone determined, and the app can be uninstalled: it's a brake, not
+a safe.
 
 It detects things by **stable signals** (link addresses such as `/reels/`,
 `/explore/` and `/reel/<id>`, `<article>` posts, roles, aria-labels, and label
@@ -78,6 +88,7 @@ src/filter/routes.js    Decides if a page may open (shared with the Android app)
 src/filter/filter.js    The engine: observer, page checks, tap blocking
 src/filter/report.js    "Report a problem" outline (anonymised)
 src/filter/log.js       The report's timeline: scroll jumps, posts arriving, what the filter did
+src/filter/lock.js      The code that unlocks the switches (only its fingerprint)
 src/filter/ui.js, *.css Blocked screen, settings button and panel
 src/filter/generated/   The built filter as the Android app injects it (don't edit)
 scripts/build-filter.mjs  Builds dist/let-me-wonder.user.js and src/filter/generated/
@@ -93,6 +104,7 @@ assets/                 Icons (made by scripts/make-icons.mjs)
 test/fake-instagram/    A tiny fake Instagram that copies the signals the filter uses
 test/filter.test.mjs    Automatic checks for the filter (npm test)
 test/url-policy.test.mjs  Automatic checks for the app's page rules (npm test)
+test/lock.test.mjs      Automatic checks for the switches' lock (npm test)
 test/smoke-live.mjs     Quick check on the real, logged-out instagram.com (npm run smoke)
 docs/                   Plan, iPhone and Android guides, phone checklist
 ```

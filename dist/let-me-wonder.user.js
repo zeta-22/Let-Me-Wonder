@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.4
+// @version      0.3.5
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.31c";
+  var RULES_VERSION = "2026.10.31d";
   var TOGGLES = [
     { id: "followingFeed", label: "Home: only people you follow", default: true, blocked: "" },
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
@@ -111,7 +111,8 @@
     { label: "caughtUp", toggle: "suggested", hide: ["after"] }
   ];
   var STORIES = {
-    nextLabels: ["Next", "Avanti", "Siguiente", "Suivant", "Weiter", "Pr\xF3ximo", "Volgende", "Avan\xE7ar"]
+    nextLabels: ["Next", "Avanti", "Siguiente", "Suivant", "Weiter", "Pr\xF3ximo", "Volgende", "Avan\xE7ar"],
+    previousLabels: ["Previous", "Back", "Indietro", "Precedente", "Anterior", "Atr\xE1s", "Pr\xE9c\xE9dent", "Retour", "Zur\xFCck", "Vorige", "Terug", "Voltar"]
   };
   var LABEL_SKIP_PAGES = ["direct", "login"];
   var STRUCTURE = {
@@ -492,8 +493,83 @@
     return { add, note, checkFeed, before, notes: allNotes, lines: () => lines.slice() };
   }
 
+  // src/filter/lock.js
+  var SALT = "let-me-wonder:settings-code:v1:";
+  var CODE_HASH = "d198ba61a4409fe62c7b0fba5ba568cd99e5203d5b670b307a6b09e1e46ff67b";
+  var MAX_WRONG = 5;
+  var WAIT_MS = 3e4;
+  function sha256(text) {
+    const k = [];
+    const h = [];
+    for (let n = 2, found = 0; found < 64; n++) {
+      let prime = true;
+      for (let d = 2; d * d <= n; d++) if (n % d === 0) prime = false;
+      if (!prime) continue;
+      if (found < 8) h[found] = Math.sqrt(n) * 2 ** 32 | 0;
+      k[found++] = Math.cbrt(n) * 2 ** 32 | 0;
+    }
+    const bytes = [];
+    for (let i = 0; i < text.length; i++) bytes.push(text.charCodeAt(i) & 255);
+    const bits = bytes.length * 8;
+    bytes.push(128);
+    while (bytes.length % 64 !== 56) bytes.push(0);
+    for (let i = 7; i >= 0; i--) bytes.push(i >= 4 ? 0 : bits >>> i * 8 & 255);
+    const rotr = (x, n) => x >>> n | x << 32 - n;
+    for (let off = 0; off < bytes.length; off += 64) {
+      const w = [];
+      for (let i = 0; i < 16; i++) {
+        w[i] = bytes[off + i * 4] << 24 | bytes[off + i * 4 + 1] << 16 | bytes[off + i * 4 + 2] << 8 | bytes[off + i * 4 + 3];
+      }
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ w[i - 15] >>> 3;
+        const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ w[i - 2] >>> 10;
+        w[i] = w[i - 16] + s0 + w[i - 7] + s1 | 0;
+      }
+      let [a, b, c, d, e, f, g, hh] = h;
+      for (let i = 0; i < 64; i++) {
+        const t1 = hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + (e & f ^ ~e & g) + k[i] + w[i] | 0;
+        const t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + (a & b ^ a & c ^ b & c) | 0;
+        hh = g;
+        g = f;
+        f = e;
+        e = d + t1 | 0;
+        d = c;
+        c = b;
+        b = a;
+        a = t1 + t2 | 0;
+      }
+      [a, b, c, d, e, f, g, hh].forEach((v, i) => h[i] = h[i] + v | 0);
+    }
+    return h.map((v) => (v >>> 0).toString(16).padStart(8, "0")).join("");
+  }
+  function fingerprint(code) {
+    return sha256(SALT + code);
+  }
+  function isCode(code, hash = CODE_HASH) {
+    return /^\d{1,12}$/.test(String(code)) && fingerprint(code) === hash;
+  }
+  function createLock({ check = isCode, now = () => Date.now() } = {}) {
+    let wrong = 0;
+    let waitUntil = 0;
+    return {
+      tryCode(code) {
+        const t = now();
+        if (t < waitUntil) return { ok: false, wait: Math.ceil((waitUntil - t) / 1e3) };
+        if (check(code)) {
+          wrong = 0;
+          return { ok: true };
+        }
+        wrong++;
+        if (wrong < MAX_WRONG) return { ok: false };
+        wrong = 0;
+        waitUntil = t + WAIT_MS;
+        return { ok: false, wait: WAIT_MS / 1e3 };
+      }
+    };
+  }
+
   // src/filter/ui.css
-  var ui_default = "/* Let Me Wonder: look of the Blocked screen, settings button and settings panel.\n   Lives in its own shadow root, so Instagram's styles can't touch it. */\n\n:host {\n  --bg: #ffffff;\n  --fg: #111111;\n  --muted: #6b6b6b;\n  --line: #e4e4e4;\n  --accent: #2f6f4f;\n  --accent-fg: #ffffff;\n  --shade: rgba(0, 0, 0, 0.35);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --bg: #121212;\n    --fg: #f2f2f2;\n    --muted: #a0a0a0;\n    --line: #2c2c2c;\n    --accent: #6fbf94;\n    --accent-fg: #0b1f14;\n    --shade: rgba(0, 0, 0, 0.6);\n  }\n}\n\n/* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */\n.blocked, .gear, .backdrop {\n  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  color: var(--fg);\n}\n\n[hidden] { display: none !important; }\nbutton { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }\n\n/* Blocked screen */\n.blocked {\n  position: fixed;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  background: var(--bg);\n  pointer-events: auto;\n}\n.blocked .card { max-width: 340px; text-align: center; }\n.blocked .leaf { width: 44px; height: 44px; color: var(--accent); }\n.blocked h1 { font-size: 21px; margin: 12px 0 8px; }\n.blocked p { color: var(--muted); margin: 0 0 22px; }\n.primary {\n  border: 0;\n  border-radius: 10px;\n  padding: 12px 26px;\n  background: var(--accent);\n  color: var(--accent-fg);\n  font-weight: 600;\n}\n\n/* Small settings button (Safari only) */\n.gear {\n  position: fixed;\n  right: 10px;\n  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: 1px solid var(--line);\n  background: var(--bg);\n  color: var(--muted);\n  opacity: 0.55;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  pointer-events: auto;\n}\n\n.gear[data-place='side'] {\n  top: 40%;\n  bottom: auto;\n}\n.gear svg { width: 18px; height: 18px; }\n\n/* Settings panel */\n.backdrop {\n  position: fixed;\n  inset: 0;\n  background: var(--shade);\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  pointer-events: auto;\n}\n.sheet {\n  width: 100%;\n  max-width: 480px;\n  max-height: 88vh;\n  overflow-y: auto;\n  background: var(--bg);\n  border-radius: 16px 16px 0 0;\n  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);\n}\n.sheet-head { display: flex; align-items: center; justify-content: space-between; }\n.sheet h2 { font-size: 18px; margin: 0; }\n.close { border: 0; background: none; font-size: 22px; padding: 4px 8px; color: var(--muted); }\n.toggles { list-style: none; margin: 10px 0; padding: 0; }\n.toggles li { border-bottom: 1px solid var(--line); }\n.toggles label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }\n.toggles input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }\n.secondary {\n  width: 100%;\n  margin-top: 14px;\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  padding: 11px;\n  background: none;\n}\n.status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }\n.manual { width: 100%; height: 120px; margin-top: 8px; font: 12px/1.3 ui-monospace, Menlo, monospace; }\n.foot { color: var(--muted); font-size: 12px; margin: 12px 0 0; }\n";
+  var ui_default = "/* Let Me Wonder: look of the Blocked screen, settings button and settings panel.\n   Lives in its own shadow root, so Instagram's styles can't touch it. */\n\n:host {\n  --bg: #ffffff;\n  --fg: #111111;\n  --muted: #6b6b6b;\n  --line: #e4e4e4;\n  --accent: #2f6f4f;\n  --accent-fg: #ffffff;\n  --shade: rgba(0, 0, 0, 0.35);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --bg: #121212;\n    --fg: #f2f2f2;\n    --muted: #a0a0a0;\n    --line: #2c2c2c;\n    --accent: #6fbf94;\n    --accent-fg: #0b1f14;\n    --shade: rgba(0, 0, 0, 0.6);\n  }\n}\n\n/* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */\n.blocked, .gear, .backdrop {\n  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  color: var(--fg);\n}\n\n[hidden] { display: none !important; }\nbutton { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }\n\n/* Blocked screen */\n.blocked {\n  position: fixed;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  background: var(--bg);\n  pointer-events: auto;\n}\n.blocked .card { max-width: 340px; text-align: center; }\n.blocked .leaf { width: 44px; height: 44px; color: var(--accent); }\n.blocked h1 { font-size: 21px; margin: 12px 0 8px; }\n.blocked p { color: var(--muted); margin: 0 0 22px; }\n.primary {\n  border: 0;\n  border-radius: 10px;\n  padding: 12px 26px;\n  background: var(--accent);\n  color: var(--accent-fg);\n  font-weight: 600;\n}\n\n/* Small settings button (Safari only) */\n.gear {\n  position: fixed;\n  right: 10px;\n  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: 1px solid var(--line);\n  background: var(--bg);\n  color: var(--muted);\n  opacity: 0.55;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  pointer-events: auto;\n}\n\n.gear[data-place='side'] {\n  top: 40%;\n  bottom: auto;\n}\n.gear svg { width: 18px; height: 18px; }\n\n/* Settings panel */\n.backdrop {\n  position: fixed;\n  inset: 0;\n  background: var(--shade);\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  pointer-events: auto;\n}\n.sheet {\n  width: 100%;\n  max-width: 480px;\n  max-height: 88vh;\n  overflow-y: auto;\n  background: var(--bg);\n  border-radius: 16px 16px 0 0;\n  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);\n}\n.sheet-head { display: flex; align-items: center; justify-content: space-between; }\n.sheet h2 { font-size: 18px; margin: 0; }\n.close { border: 0; background: none; font-size: 22px; padding: 4px 8px; color: var(--muted); }\n.toggles { list-style: none; margin: 10px 0; padding: 0; }\n.toggles li { border-bottom: 1px solid var(--line); }\n.toggles label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }\n.toggles input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }\n.secondary {\n  width: 100%;\n  margin-top: 14px;\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  padding: 11px;\n  background: none;\n}\n.status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }\n.lock { margin: 12px 0 0; }\n.lock-msg { margin: 0 0 8px; color: var(--muted); font-size: 14px; }\n.lock-entry { display: flex; gap: 8px; }\n.lock-entry[hidden] { display: none; }\n.code { flex: 1; min-width: 0; font-size: 16px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); }\n.unlock { width: auto; margin: 0; padding: 0 16px; }\n.toggles input:disabled { opacity: 0.45; }\n.manual { width: 100%; height: 120px; margin-top: 8px; font: 12px/1.3 ui-monospace, Menlo, monospace; }\n.foot { color: var(--muted); font-size: 12px; margin: 12px 0 0; }\n";
 
   // src/filter/ui.js
   var LEAF_ICON = '<svg class="leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14z"/><path d="M5 19l7-7"/></svg>';
@@ -540,11 +616,40 @@
         return el("li", {}, [el("label", {}, [el("span", { text: s.label }), input])]);
       })
     );
+    const codeBox = el("input", {
+      class: "code",
+      type: "password",
+      inputmode: "numeric",
+      autocomplete: "off",
+      maxlength: "12",
+      "aria-label": "Code"
+    });
+    const unlockButton = el("button", { class: "secondary unlock", type: "button", text: "Unlock" });
+    const lockMsg = el("p", { class: "lock-msg", "aria-live": "polite" });
+    const lockRow = el("div", { class: "lock" }, [lockMsg, el("div", { class: "lock-entry" }, [codeBox, unlockButton])]);
+    let unlocked = false;
+    function setLocked(locked, message) {
+      unlocked = !locked;
+      for (const input of Object.values(inputs)) input.disabled = locked;
+      lockMsg.textContent = message || (locked ? "Locked: enter the code to change the switches." : "Unlocked until you close this.");
+      lockRow.querySelector(".lock-entry").hidden = !locked;
+      codeBox.value = "";
+    }
+    function tryUnlock() {
+      const result = options.tryCode(codeBox.value);
+      if (result.ok) setLocked(false);
+      else setLocked(true, result.wait ? `Too many tries: wait ${result.wait} s.` : "Wrong code.");
+    }
+    unlockButton.addEventListener("click", tryUnlock);
+    codeBox.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") tryUnlock();
+    });
     const status = el("p", { class: "status", "aria-live": "polite" });
     const reportButton = el("button", { class: "secondary", type: "button", text: "Copy problem report" });
     const closeButton = el("button", { class: "close", type: "button", "aria-label": "Close", text: "\u2715" });
     const sheet = el("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": "Let Me Wonder settings" }, [
       el("div", { class: "sheet-head" }, [el("h2", { text: "Let Me Wonder" }), closeButton]),
+      lockRow,
       list,
       reportButton,
       status,
@@ -567,6 +672,7 @@
     function openPanel() {
       const s = options.getSettings();
       for (const [id, input] of Object.entries(inputs)) input.checked = !!s[id];
+      setLocked(true);
       status.textContent = "";
       const old = sheet.querySelector(".manual");
       if (old) old.remove();
@@ -574,6 +680,7 @@
       refreshGear();
     }
     function closePanel() {
+      setLocked(true);
       backdrop.hidden = true;
       refreshGear();
     }
@@ -623,7 +730,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.4" : "dev";
+  var VERSION = true ? "0.3.5" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -635,6 +742,8 @@
   var SMALL_COVER_PX = 36;
   var STORY_RETRY_MS = 1500;
   var STORY_MAX_TRIES = 3;
+  var STORY_WAY_MS = 3e3;
+  var SWIPE_PX = 50;
   function coverCss(scope, target, label) {
     const sel = `${scope} ${target}`;
     const small = `${scope}[data-lmw-on~="smallCovers"] ${target}`;
@@ -661,6 +770,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
   var MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
   var backLabels = new Set(HOME_FEED.backLabels.map(normalize2));
   var nextLabels = new Set(STORIES.nextLabels.map(normalize2));
+  var previousLabels = new Set(STORIES.previousLabels.map(normalize2));
   function sessionTake(key) {
     try {
       const v = sessionStorage.getItem(key);
@@ -1049,6 +1159,30 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     let storyAd = null;
     let skipping = false;
     let storyOutlineKept = false;
+    let storyWay = { back: false, at: 0 };
+    let pointerStart = null;
+    function noteWay(back) {
+      if (page === "stories") storyWay = { back, at: Date.now() };
+    }
+    window.addEventListener("pointerdown", (e) => pointerStart = e.isTrusted ? { x: e.clientX, y: e.clientY } : null, true);
+    window.addEventListener(
+      "pointerup",
+      (e) => {
+        if (!e.isTrusted || !pointerStart) return;
+        const dx = e.clientX - pointerStart.x;
+        const swiped = Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(e.clientY - pointerStart.y);
+        noteWay(swiped ? dx > 0 : pointerStart.x < window.innerWidth / 3);
+        pointerStart = null;
+      },
+      true
+    );
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.isTrusted && (e.key === "ArrowLeft" || e.key === "ArrowRight")) noteWay(e.key === "ArrowLeft");
+      },
+      true
+    );
     function isShown(el2) {
       return el2.getClientRects().length > 0 && getComputedStyle(el2).visibility !== "hidden";
     }
@@ -1063,20 +1197,25 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       const now = Date.now();
       const same = storyAd && storyAd.label === label;
       if (skipping || same && now - storyAd.at < STORY_RETRY_MS) return;
-      const tries = same && storyAd.path === location.pathname ? storyAd.tries + 1 : 1;
+      const retry = same && storyAd.path === location.pathname;
+      const tries = retry ? storyAd.tries + 1 : 1;
       if (tries > STORY_MAX_TRIES) return;
-      storyAd = { label, path: location.pathname, tries, at: now };
+      const back = retry ? storyAd.back : storyWay.back && now - storyWay.at < STORY_WAY_MS;
+      storyAd = { label, path: location.pathname, tries, at: now, back };
       if (!storyOutlineKept) {
         storyOutlineKept = true;
         log.note("the story viewer when an ad showed", outlineOf(viewerOf(label)));
       }
       pauseMedia();
-      const next = nextControl(label);
-      log.add(`story ad: skipped with ${next ? "the next button" : "the right-arrow key"}${tries > 1 ? `, try ${tries}` : ""}`);
+      const next = controlNear(nextLabels, label);
+      const control = back ? next && controlNear(previousLabels, next, { notOnTop: true }) : next;
+      const key = back ? "ArrowLeft" : "ArrowRight";
+      const how = control ? `the ${back ? "previous" : "next"} button` : `the ${back ? "left" : "right"}-arrow key`;
+      log.add(`story ad: skipped${back ? " backwards" : ""} with ${how}${tries > 1 ? `, try ${tries}` : ""}`);
       skipping = true;
       try {
-        if (next) press(next);
-        else label.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", keyCode: 39, bubbles: true }));
+        if (control) press(control);
+        else label.dispatchEvent(new KeyboardEvent("keydown", { key, code: key, keyCode: back ? 37 : 39, bubbles: true }));
       } finally {
         skipping = false;
       }
@@ -1088,14 +1227,15 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       }
       return node;
     }
-    function nextControl(label) {
+    function controlNear(labels, anchor, { notOnTop = false } = {}) {
       const ancestors = [];
-      for (let n = label; n; n = n.parentElement) ancestors.push(n);
+      for (let n = anchor; n; n = n.parentElement) ancestors.push(n);
       let best = null;
       let bestAt = Infinity;
       for (const el2 of document.querySelectorAll("[aria-label]")) {
-        if (!nextLabels.has(normalize2(el2.getAttribute("aria-label"))) || el2.closest(STRUCTURE.post) || !isShown(el2)) continue;
+        if (!labels.has(normalize2(el2.getAttribute("aria-label"))) || el2.closest(STRUCTURE.post) || !isShown(el2)) continue;
         const control = el2.closest('button, [role="button"], a') || el2;
+        if (control === anchor || notOnTop && control.getBoundingClientRect().top < window.innerHeight * 0.15) continue;
         const at = ancestors.findIndex((a) => a.contains(control));
         if (at >= 0 && at < bestAt) {
           best = control;
@@ -1153,6 +1293,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         notes: log.notes()
       });
     }
+    const lock = createLock();
     const ui = createUi({
       toggles: TOGGLES,
       version: VERSION,
@@ -1160,6 +1301,11 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       getSettings: () => ({ ...settings }),
       onChange: setSettings,
       getReport: report,
+      tryCode: (code) => {
+        const result = lock.tryCode(code);
+        log.add(result.ok ? "switches unlocked" : "wrong code for the switches");
+        return result;
+      },
       onGear: host === "app" ? () => notifyHost({ type: "openSettings" }) : void 0
     });
     shownPage = pageLabel();

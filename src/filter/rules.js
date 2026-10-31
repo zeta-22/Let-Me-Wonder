@@ -4,7 +4,7 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.10.31c';
+export const RULES_VERSION = '2026.10.31d';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
@@ -122,9 +122,12 @@ export const LABEL_RULES = [
 
 // Ads between stories are skipped with Instagram's own "next" control in the story
 // viewer, found by its label (or, if there's none, the right-arrow key). Never with the
-// ad's own buttons.
+// ad's own buttons. Going back through stories (a tap on the left of the screen, a swipe
+// to the right, the left-arrow key), an ad is skipped backwards instead: with the
+// "previous" control next to the "next" one, or the left-arrow key.
 export const STORIES = {
   nextLabels: ['Next', 'Avanti', 'Siguiente', 'Suivant', 'Weiter', 'Próximo', 'Volgende', 'Avançar'],
+  previousLabels: ['Previous', 'Back', 'Indietro', 'Precedente', 'Anterior', 'Atrás', 'Précédent', 'Retour', 'Zurück', 'Vorige', 'Terug', 'Voltar'],
 };
 
 // Label rules are skipped on these pages (a friend could write "Sponsored" in a DM).

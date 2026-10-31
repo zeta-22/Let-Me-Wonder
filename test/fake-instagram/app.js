@@ -348,37 +348,65 @@
     );
   }
 
-  // An ad between stories: the advertiser, "Sponsorizzato", the ad's own link, and the
-  // viewer's "next" control. With &storynext=none there's no next control, only the
-  // right-arrow key. Moving on shows a friend's story.
-  function openStoryAd() {
-    history.pushState({}, '', '/stories/shop_brand/999/');
-    const noNext = params.get('storynext') === 'none';
+  // Stories in a row, with an ad between two friends' stories. The viewer has tap zones
+  // (left third: back, the rest: next), "Indietro" / "Avanti" controls at the sides, and
+  // answers the arrow keys. With &storynext=none there are no controls, only the tap
+  // zones and the keys. The ad has the advertiser, "Sponsorizzato" and its own link.
+  const storyList = [
+    { path: '/stories/friend_one/111/', who: 'friend_one' },
+    { path: '/stories/shop_brand/999/', who: 'shop_brand', ad: true },
+    { path: '/stories/friend_two/222/', who: 'friend_two' },
+  ];
+
+  function openStories(start) {
+    let at = start;
+    history.pushState({}, '', storyList[at].path);
+    const controls =
+      params.get('storynext') === 'none'
+        ? ''
+        : `<div role="button" aria-label="Indietro" data-fx="story-prev" style="position:absolute;left:4px;top:50%;width:24px;height:24px"><svg aria-label="Indietro"></svg></div>
+          <div role="button" aria-label="Avanti" data-fx="story-next" style="position:absolute;right:4px;top:50%;width:24px;height:24px"><svg aria-label="Avanti"></svg></div>`;
     document.body.insertAdjacentHTML(
       'beforeend',
       `<div role="dialog" data-fx="story-viewer" style="position:fixed;inset:0;background:#000;color:#fff">
-        <div data-fx="story-content">
-          <div><a href="/shop_brand/">shop_brand</a><span>Sponsorizzato</span></div>
-          <video muted playsinline data-fx="story-ad-video"></video>
-          <a href="https://shop.example/buy" data-fx="story-cta">Scopri di più</a>
-        </div>
-        ${noNext ? '' : '<div role="button" aria-label="Avanti" data-fx="story-next"><svg aria-label="Avanti"></svg></div>'}
+        <div data-fx="story-content"></div>
+        <div data-fx="story-left" style="position:absolute;left:0;top:20%;width:33%;height:60%"></div>
+        <div data-fx="story-right" style="position:absolute;right:0;top:20%;width:67%;height:60%"></div>
+        ${controls}
       </div>`,
     );
     const viewer = document.querySelector('[data-fx="story-viewer"]');
-    window.fakeStoryMoves = 0;
-    const next = () => {
-      window.fakeStoryMoves++;
-      history.replaceState({}, '', '/stories/friend_two/222/');
+    const show = () => {
+      const story = storyList[at];
       viewer.querySelector('[data-fx="story-content"]').innerHTML =
-        '<div><a href="/friend_two/">friend_two</a><span>3 h</span></div><video muted playsinline data-fx="story-friend-video"></video>';
+        `<div><a href="/${story.who}/">${story.who}</a><span>${story.ad ? 'Sponsorizzato' : '3 h'}</span></div>` +
+        '<video muted playsinline></video>' +
+        (story.ad ? '<a href="https://shop.example/buy" data-fx="story-cta">Scopri di più</a>' : '');
+      const cta = viewer.querySelector('[data-fx="story-cta"]');
+      if (cta) cta.addEventListener('click', () => (window.fakeCtaTapped = true));
+      window.fakeStory = story.who;
     };
-    const button = viewer.querySelector('[data-fx="story-next"]');
-    if (button) button.addEventListener('click', next);
+    const go = (step) => {
+      if (!viewer.isConnected || at + step < 0 || at + step >= storyList.length) return;
+      at += step;
+      window.fakeStoryMoves++;
+      window.fakeStoryTrail.push(storyList[at].who);
+      history.replaceState({}, '', storyList[at].path);
+      show();
+    };
+    window.fakeStoryMoves = 0;
+    window.fakeStoryTrail = [storyList[at].who];
+    show();
+    viewer.querySelector('[data-fx="story-left"]').addEventListener('click', () => go(-1));
+    viewer.querySelector('[data-fx="story-right"]').addEventListener('click', () => go(1));
+    for (const [fx, step] of [['story-prev', -1], ['story-next', 1]]) {
+      const control = viewer.querySelector(`[data-fx="${fx}"]`);
+      if (control) control.addEventListener('click', () => go(step));
+    }
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowRight' && viewer.isConnected) next();
+      if (e.key === 'ArrowRight') go(1);
+      if (e.key === 'ArrowLeft') go(-1);
     });
-    viewer.querySelector('[data-fx="story-cta"]').addEventListener('click', () => (window.fakeCtaTapped = true));
   }
 
   window.addEventListener('popstate', () => {
@@ -386,6 +414,6 @@
     if (story) story.remove();
     else render();
   });
-  window.fake = { navigate, openStory, openStoryAd };
+  window.fake = { navigate, openStory, openStories: () => openStories(0), openStoryAd: () => openStories(1) };
   render();
 })();
