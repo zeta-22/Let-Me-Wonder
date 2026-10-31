@@ -4,7 +4,7 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.10.30';
+export const RULES_VERSION = '2026.10.31';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
@@ -22,7 +22,14 @@ export const TOGGLES = [
 
 // Home shows Instagram's "Following" feed (only people you follow, newest first)
 // instead of "For you". Used when Instagram is opened on "/" and when you tap Home.
-export const HOME_FEED = { toggle: 'followingFeed', param: 'variant', value: 'following' };
+// That page has no stories row: its back arrow (found by its icon's label, `backLabels`)
+// is left to Instagram, and leads to the main home page with the stories.
+export const HOME_FEED = {
+  toggle: 'followingFeed',
+  param: 'variant',
+  value: 'following',
+  backLabels: ['Back', 'Indietro', 'Atrás', 'Voltar', 'Retour', 'Zurück', 'Terug'],
+};
 
 // Kinds of page, recognised by the address path (the part after instagram.com).
 // Other rules use these names to apply only on some pages. First match wins.

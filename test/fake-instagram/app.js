@@ -173,10 +173,18 @@
     io.observe(box.firstElementChild);
   }
 
+  // The Following feed (/?variant=following) is a page of its own, as on the real site:
+  // a "← Seguiti" header whose back arrow links to the main home page.
+  const followingHeader = () =>
+    new URLSearchParams(location.search).get('variant') === 'following'
+      ? `<header data-fx="following-header"><h1><a href="/" data-fx="following-back">
+          <svg aria-label="Indietro"></svg><span>Seguiti</span></a></h1></header>`
+      : '';
+
   function viewFor(path) {
     let m;
-    if (path === '/' && params.get('fake') === 'endless') return views.endless();
-    if (path === '/') return views.home();
+    if (path === '/' && params.get('fake') === 'endless') return followingHeader() + views.endless();
+    if (path === '/') return followingHeader() + views.home();
     if (path === '/notifications/') return views.notifications();
     if (path === '/explore/') return views.explore();
     if (path.startsWith('/explore/search/')) return views.search();
@@ -249,7 +257,20 @@
     e.preventDefault();
     navigate(url.pathname + url.search);
   });
-  window.addEventListener('popstate', render);
-  window.fake = { navigate };
+  // Stories open over the feed, which stays in the page, where it was, underneath.
+  function openStory() {
+    history.pushState({}, '', '/stories/friend_one/111/');
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<div role="dialog" data-fx="story-viewer" style="position:fixed;inset:0;background:#000"><video muted playsinline></video></div>',
+    );
+  }
+
+  window.addEventListener('popstate', () => {
+    const story = document.querySelector('[data-fx="story-viewer"]');
+    if (story) story.remove();
+    else render();
+  });
+  window.fake = { navigate, openStory };
   render();
 })();

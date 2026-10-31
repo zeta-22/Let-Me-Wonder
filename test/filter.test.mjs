@@ -87,6 +87,37 @@ test('Home on the Following feed goes back to the top instead of reloading it', 
   assert.equal(await search(page), '?variant=following');
 });
 
+test('the back arrow on the Following feed opens Instagram’s main page, the one with stories', async () => {
+  const page = await open(browser, '/');
+  assert.equal(await search(page), '?variant=following');
+  await page.evaluate(() => (window.notReloaded = true));
+  await tap(page, 'following-back');
+  assert.equal(await path(page), '/');
+  assert.equal(await search(page), '', 'Instagram’s main page, not the Following feed again');
+  assert.equal(await page.evaluate(() => window.notReloaded), true, 'Instagram moved there itself, no reload');
+  await expectVisible(page, ['stories', 'post-normal'], true);
+  await expectVisible(page, ['ad-en', 'suggested-post'], false);
+});
+
+test('a story opened from the feed leaves hidden reels hidden, so the feed doesn’t move underneath', async () => {
+  const page = await open(browser, '/', { settings: { feedReels: true } });
+  const where = () => page.evaluate(() => ({ y: scrollY, h: document.documentElement.scrollHeight }));
+  await page.evaluate(() => {
+    document.body.style.paddingBottom = '3000px';
+    window.scrollTo(0, 300);
+  });
+  const before = await where();
+  await page.evaluate(() => window.fake.openStory());
+  await page.waitForTimeout(100);
+  assert.equal(await height(page, 'post-reel'), 1, 'still a placeholder under the story');
+  assert.deepEqual(await where(), before, 'the feed underneath didn’t change');
+  await page.evaluate(() => history.back());
+  await page.waitForTimeout(100);
+  assert.equal(await path(page), '/');
+  assert.equal(await height(page, 'post-reel'), 1);
+  assert.deepEqual(await where(), before, 'back where you were');
+});
+
 test('endless feed: when everything new is hidden, the filter nudges Instagram to load more', async () => {
   const page = await open(browser, '/?fake=endless&hl=it');
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -308,6 +339,24 @@ test('problem report: structure only, no usernames, no messages, never what you 
   const dm = await open(browser, '/direct/t/123/');
   const dmReport = await dm.evaluate(() => window.__LMW__.buildReport());
   assert.ok(!dmReport.includes('see you at 8'), 'DM messages are left out');
+});
+
+test('problem report: a timeline of what happened, in numbers and kinds of page only', async () => {
+  const page = await open(browser, '/', { settings: { feedReels: true } });
+  await page.evaluate(() => (document.body.style.paddingBottom = '4000px'));
+  await page.evaluate(() => window.scrollTo(0, 2500)); // as if the page jumped by itself
+  await page.waitForTimeout(100);
+  await page.evaluate(() => window.fake.openStory());
+  await page.evaluate(() => history.back());
+  await page.waitForTimeout(100);
+  const report = await page.evaluate(() => window.__LMW__.buildReport());
+  const timeline = report.slice(report.indexOf('what happened'), report.indexOf('\n---\n'));
+  assert.match(timeline, /start 0\.\d+\.\d+ .*home \(following\)/);
+  assert.match(timeline, /posts \+\d+/);
+  assert.match(timeline, /scroll jumped \+2500/);
+  assert.match(timeline, /page stories/);
+  assert.match(timeline, /kept 1 hidden post hidden/);
+  assert.ok(!/friend|stranger|brand/.test(timeline), 'no names, only numbers');
 });
 
 test('inside the Android app: settings, reports and page changes go through the app', async () => {

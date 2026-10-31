@@ -17,6 +17,7 @@ import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, R
 import { decide, homeRedirect, pageOf } from './routes.js';
 import { withSaved } from './settings.js';
 import { buildReport } from './report.js';
+import { createLog } from './log.js';
 import { createUi } from './ui.js';
 import pageCss from './filter.css';
 
@@ -55,6 +56,7 @@ for (const rule of LABEL_RULES) {
   }
 }
 const MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
+const backLabels = new Set(HOME_FEED.backLabels.map(normalize));
 
 function sessionTake(key) {
   try {
@@ -77,6 +79,7 @@ function sessionPut(key, value) {
 function start() {
   const config = window.__LMW_CONFIG__ || {};
   const host = config.host === 'app' ? 'app' : 'safari';
+  const log = createLog();
   const settings = loadSettings(config.settings);
   const root = document.documentElement;
 
@@ -104,7 +107,11 @@ function start() {
   }
 
   function setSettings(partial) {
-    for (const k of Object.keys(settings)) if (typeof partial[k] === 'boolean') settings[k] = partial[k];
+    for (const k of Object.keys(settings)) {
+      if (typeof partial[k] !== 'boolean' || partial[k] === settings[k]) continue;
+      settings[k] = partial[k];
+      log.add(`switch ${k} ${settings[k] ? 'on' : 'off'}`);
+    }
     if (host !== 'app') {
       try {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
@@ -147,7 +154,13 @@ function start() {
   }
 
   // --- pages and navigation ---------------------------------------------------
+  function pageLabel() {
+    const variant = page === 'home' && new URLSearchParams(location.search).get(HOME_FEED.param);
+    return page + (variant ? ` (${variant})` : '');
+  }
+
   function leaveFor(target, toggle, replace) {
+    log.add(`leaving the page: ${toggle}`);
     sessionPut(FROM_PATH_KEY, allowedPath);
     root.setAttribute('data-lmw-blocked', toggle); // hide the page while we leave it
     if (replace) location.replace(target);
@@ -158,9 +171,13 @@ function start() {
     const path = location.pathname;
     if (path === lastPath) return;
     const firstCheck = lastPath === null && navCount === 0 && !allowedPath;
-    if (lastPath !== null) navCount++;
+    const moved = lastPath !== null;
+    if (moved) navCount++;
     lastPath = path;
-    page = pageOf(path);
+    const next = pageOf(path);
+    if (next !== page) keepPlaceholders(page);
+    page = next;
+    if (moved) log.add(`page ${pageLabel()}`);
     // Opened on the home feed: show the Following feed instead (only when the page loads,
     // so choosing "For you" in Instagram's own menu still works).
     const home = firstCheck && homeRedirect(path, location.search, settings);
@@ -188,6 +205,11 @@ function start() {
     return page === 'home' && new URLSearchParams(location.search).get(HOME_FEED.param) === HOME_FEED.value;
   }
 
+  function isBackArrow(link) {
+    const labelled = [link, ...link.querySelectorAll('[aria-label]')];
+    return labelled.some((el) => backLabels.has(normalize(el.getAttribute('aria-label') || '')));
+  }
+
   function onClick(e) {
     const link = e.target && e.target.closest ? e.target.closest('a[href]') : null;
     if (!link) return;
@@ -199,14 +221,21 @@ function start() {
     }
     if (url.origin !== location.origin) return;
     const home = homeRedirect(url.pathname, url.search, settings);
+    // The Following feed's back arrow: Instagram takes you to its main page, with the stories.
+    if (home && onHomeFeed() && isBackArrow(link)) {
+      log.add('back arrow: Instagram’s main page');
+      return;
+    }
     const verdict = home ? null : decide(url.pathname, allowedPath, settings, { tapped: true });
     if (verdict && verdict.action === 'allow') return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    // Home (or the back arrow) on the Following feed: back to the top, like Instagram's own
-    // Home button. Reloading would start the feed over and add a copy of it to go Back through.
-    if (home && onHomeFeed()) window.scrollTo({ top: 0, behavior: 'smooth' });
-    else if (home) leaveFor(home, 'followingFeed', false); // the Home button: Following feed
+    // Home on the Following feed: back to the top, like Instagram's own Home button.
+    // Reloading would start the feed over and add a copy of it to go Back through.
+    if (home && onHomeFeed()) {
+      log.add('Home: back to the top');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (home) leaveFor(home, 'followingFeed', false); // the Home button: Following feed
     else if (verdict.action === 'redirect') leaveFor(verdict.to, verdict.toggle, false);
     else showBlocked(verdict.toggle, false);
   }
@@ -235,6 +264,7 @@ function start() {
   }
 
   function showBlocked(toggle, navigated) {
+    log.add(`Blocked screen: ${toggle}`);
     blocked = { toggle, navigated };
     applyRootState();
     pauseMedia();
@@ -271,6 +301,35 @@ function start() {
     // Posts, and blocks sitting between posts in a feed, keep a 1px placeholder.
     const inFeed = node.matches(STRUCTURE.post) || (node.parentElement && hasOutside(node.parentElement, node, STRUCTURE.post));
     if (inFeed) node.setAttribute(COLLAPSE_ATTR, '');
+  }
+
+  function isMarked(node, toggle) {
+    return (node.getAttribute(HIDE_ATTR) || '').split(' ').includes(toggle);
+  }
+
+  // Leaving a page: the posts its page-only rules turned into placeholders stay so, for
+  // as long as they're there. Instagram keeps the feed under a story or a post; if its
+  // hidden reels came back meanwhile, the whole feed would shift and their videos play.
+  function keepPlaceholders(fromPage) {
+    let kept = 0;
+    for (const rule of CSS_RULES) {
+      if (!rule.collapse || rule.page !== fromPage || !settings[rule.toggle]) continue;
+      for (const sel of rule.css) {
+        let found;
+        try {
+          found = document.querySelectorAll(sel);
+        } catch (e) {
+          continue; // a selector this browser doesn't support
+        }
+        for (const el of found) {
+          // Only posts in a list of posts, never the single post a page like /reel/<id>/ shows.
+          if (isMarked(el, rule.toggle) || !el.parentElement || !hasOutside(el.parentElement, el, STRUCTURE.post)) continue;
+          mark(el, rule.toggle);
+          kept++;
+        }
+      }
+    }
+    if (kept) log.add(`kept ${kept} hidden post${kept > 1 ? 's' : ''} hidden after leaving the page`);
   }
 
   // The block around a label: its post, or the largest group of elements around
@@ -389,26 +448,35 @@ function start() {
     afterScan();
   }
 
-  function hasPost(node) {
-    return node.nodeType === 1 && (node.matches(STRUCTURE.post) || !!node.querySelector(STRUCTURE.post));
+  // Into a set: a post can come with its parent and on its own in the same batch of changes.
+  function collectPosts(node, into) {
+    if (node.nodeType !== 1) return;
+    if (node.matches(STRUCTURE.post)) into.add(node);
+    else for (const post of node.querySelectorAll(STRUCTURE.post)) into.add(post);
   }
 
   function onMutations(records) {
     checkPath();
     if (root.getAttribute('data-lmw-on') === null) applyRootState(); // in case the page reset our marks
-    let postsAdded = false;
+    const added = new Set();
+    const removed = new Set();
     for (const r of records) {
       if (r.type === 'characterData') scan(r.target);
       else {
         for (const n of r.addedNodes) {
           scan(n);
-          if (!postsAdded && page === 'home' && hasPost(n)) postsAdded = true;
+          collectPosts(n, added);
         }
+        for (const n of r.removedNodes) collectPosts(n, removed);
       }
     }
     afterScan();
+    if (added.size || removed.size) {
+      const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(' ');
+      log.add(`posts ${change}, ${document.querySelectorAll(STRUCTURE.post).length} in the page`);
+    }
     // Right away, not at the next tick: did the new posts leave the spinner on screen?
-    if (postsAdded) watchFeed();
+    if (added.size && page === 'home') watchFeed();
   }
 
   // --- keeping the endless feed loading ---------------------------------------
@@ -447,6 +515,7 @@ function start() {
   function watchFeed() {
     if (page !== 'home' || blocked || document.hidden) return;
     const posts = document.querySelectorAll(STRUCTURE.post);
+    log.checkFeed(posts.length ? posts[0].parentElement : null);
     const count = visibleCount(posts);
     if (count !== lastVisibleCount) {
       lastVisibleCount = count;
@@ -477,6 +546,7 @@ function start() {
     if (due && nudges < MAX_NUDGES) {
       nudges++;
       nudgedAt = now;
+      log.add(`nudge ${nudges}${stuckSince ? '' : ' (nothing came for 10 s)'}: ${posts.length} posts, ${count} shown`);
       stuckSince = 0;
       nudge(spinner);
     }
@@ -490,7 +560,7 @@ function start() {
   }
 
   function report() {
-    return buildReport({ version: VERSION, rulesVersion: RULES_VERSION, host, settings, page });
+    return buildReport({ version: VERSION, rulesVersion: RULES_VERSION, host, settings, page, events: log.lines() });
   }
 
   // --- start ----------------------------------------------------------------
@@ -504,6 +574,7 @@ function start() {
     onGear: host === 'app' ? () => notifyHost({ type: 'openSettings' }) : undefined,
   });
 
+  log.add(`start ${VERSION} ${host}, ${pageLabel()}`);
   const style = document.createElement('style');
   style.id = 'lmw-style';
   style.textContent = buildCss();

@@ -9,6 +9,8 @@
 //   - in descriptions like "Storia di someone, vista", one-off words become {…}
 //   - what you type (input boxes) is never read
 //   - images are listed without their descriptions
+// Before the outline comes a timeline of what happened lately (log.js): numbers and
+// kinds of page only.
 
 import { CSS_RULES, LABELS, TOGGLES } from './rules.js';
 
@@ -204,7 +206,7 @@ function cssMatches() {
   return out;
 }
 
-export function buildReport({ version, rulesVersion, host, settings, page }) {
+export function buildReport({ version, rulesVersion, host, settings, page, events = [] }) {
   const mask = makeMasker(collectUsernames());
   const hiddenCounts = {};
   for (const el of document.querySelectorAll('[' + HIDE_ATTR + ']')) {
@@ -216,10 +218,13 @@ export function buildReport({ version, rulesVersion, host, settings, page }) {
     `page: ${page}   path: ${redactPath(location.pathname)}` +
       (new URLSearchParams(location.search).get('variant') ? `   feed: ${new URLSearchParams(location.search).get('variant')}` : ''),
     `screen: ${window.innerWidth}x${window.innerHeight}   ${navigator.userAgent}`,
+    `scroll: y=${Math.round(window.scrollY)} of ${document.documentElement.scrollHeight}`,
     'switches: ' + TOGGLES.map((t) => `${t.id}=${settings[t.id] ? 'on' : 'off'}`).join(' '),
     'hidden by labels: ' + (Object.entries(hiddenCounts).map(([k, v]) => `${k}×${v}`).join(' ') || 'none'),
     'css rule matches:',
     ...cssMatches(),
+    'what happened, oldest first (y = scroll position):',
+    ...events.map((e) => '  ' + e),
     '---',
   ];
   const ctx = {
