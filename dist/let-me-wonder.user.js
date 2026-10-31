@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.3
+// @version      0.3.4
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.31b";
+  var RULES_VERSION = "2026.10.31c";
   var TOGGLES = [
     { id: "followingFeed", label: "Home: only people you follow", default: true, blocked: "" },
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
@@ -27,7 +27,10 @@
     { id: "explore", label: "Explore grid", default: true, blocked: "Explore is switched off. Searching for accounts still works." },
     { id: "suggested", label: "Suggested posts and accounts", default: true, blocked: "Suggestions are switched off.", covered: "Suggestion hidden" },
     { id: "ads", label: "Ads and sponsored posts", default: true, blocked: "Ads are switched off.", covered: "Ad hidden" },
-    { id: "reelSwipe", label: "Swiping to the next reel", default: true, blocked: "You watched the reel you opened. Moving on to other reels is switched off." }
+    { id: "reelSwipe", label: "Swiping to the next reel", default: true, blocked: "You watched the reel you opened. Moving on to other reels is switched off." },
+    // A test, off by default: hidden posts become a small box instead of keeping their size,
+    // and Instagram is asked to measure the feed again. If it doesn't, the feed jumps.
+    { id: "smallCovers", label: "Small boxes for hidden posts (test: the feed may jump)", default: false }
   ];
   var HOME_FEED = {
     toggle: "followingFeed",
@@ -101,12 +104,15 @@
     caughtUp: ["You're all caught up", "Sei in pari", "Hai visualizzato tutto", "Ya est\xE1s al d\xEDa", "Voc\xEA est\xE1 em dia", "Vous \xEAtes \xE0 jour"]
   };
   var LABEL_RULES = [
-    { label: "sponsored", toggle: "ads", hide: ["post"] },
+    { label: "sponsored", toggle: "ads", hide: ["post", "story"] },
     { label: "suggestedForYou", toggle: "suggested", hide: ["block"] },
     { label: "suggestedPosts", toggle: "suggested", hide: ["block", "after"] },
     { label: "suggestedReels", toggle: "suggested", hide: ["block"] },
     { label: "caughtUp", toggle: "suggested", hide: ["after"] }
   ];
+  var STORIES = {
+    nextLabels: ["Next", "Avanti", "Siguiente", "Suivant", "Weiter", "Pr\xF3ximo", "Volgende", "Avan\xE7ar"]
+  };
   var LABEL_SKIP_PAGES = ["direct", "login"];
   var STRUCTURE = {
     post: "article",
@@ -339,7 +345,7 @@
     return el2.tagName + "|" + (el2.getAttribute("role") || "") + "|" + el2.childElementCount;
   }
   function walk(el2, depth, ctx) {
-    if (ctx.lines.length >= MAX_LINES || skipped(el2)) return;
+    if (ctx.lines.length >= (ctx.maxLines || MAX_LINES) || skipped(el2)) return;
     const indent = "  ".repeat(depth);
     ctx.lines.push(indent + describe(el2, ctx));
     if (el2.tagName === "svg" || el2.tagName === "SVG" || depth >= MAX_DEPTH) return;
@@ -372,7 +378,12 @@
     }
     return out;
   }
-  function buildReport({ version, rulesVersion, host, settings, page, events = [], eventsBefore = null }) {
+  function outlineOf(el2, maxLines = 120) {
+    const ctx = { lines: [], mask: makeMasker(collectUsernames()), allowText: true, maxLines, repeats: countRepeats(el2) };
+    walk(el2, 0, ctx);
+    return ctx.lines;
+  }
+  function buildReport({ version, rulesVersion, host, settings, page, events = [], eventsBefore = null, notes = [] }) {
     const mask = makeMasker(collectUsernames());
     const hiddenCounts = {};
     for (const el2 of document.querySelectorAll("[" + HIDE_ATTR + "]")) {
@@ -391,6 +402,7 @@
       "what happened, oldest first (y = scroll position):",
       ...events.map((e) => "  " + e),
       ...eventsBefore ? [`the page load before this one (it began ${eventsBefore.secondsEarlier} s earlier):`, ...eventsBefore.lines.map((e) => "  " + e)] : [],
+      ...notes.flatMap((n) => [`${n.title}:`, ...n.lines.map((l) => "  " + l)]),
       "---"
     ];
     const ctx = {
@@ -421,6 +433,7 @@
   function createLog() {
     const previous = loadPrevious();
     const lines = [];
+    const notes = {};
     const start2 = Date.now();
     let lastY = 0;
     let lastHeight = 0;
@@ -430,10 +443,23 @@
       const s = ((Date.now() - start2) / 1e3).toFixed(1);
       lines.push(`${s}s y=${Math.round(window.scrollY)} ${text}`);
       if (lines.length > MAX_LINES2) lines.shift();
+      save();
+    }
+    function save() {
       try {
-        localStorage.setItem(STORE_KEY, JSON.stringify({ start: start2, lines }));
+        localStorage.setItem(STORE_KEY, JSON.stringify({ start: start2, lines, notes }));
       } catch (e) {
       }
+    }
+    function note(title, noteLines) {
+      notes[title] = noteLines;
+      save();
+    }
+    function allNotes() {
+      const out = Object.entries(notes).map(([title, l]) => ({ title, lines: l }));
+      const old = previous && previous.notes || {};
+      for (const [title, l] of Object.entries(old)) if (!notes[title]) out.push({ title: `${title} (page load before)`, lines: l });
+      return out;
     }
     function before() {
       if (!previous) return null;
@@ -463,11 +489,11 @@
     window.addEventListener("touchend", (e) => fingers = e.touches.length, passive);
     window.addEventListener("touchcancel", () => fingers = 0, passive);
     document.addEventListener("visibilitychange", () => add(document.hidden ? "app in the background" : "app back on screen"));
-    return { add, checkFeed, before, lines: () => lines.slice() };
+    return { add, note, checkFeed, before, notes: allNotes, lines: () => lines.slice() };
   }
 
   // src/filter/ui.css
-  var ui_default = "/* Let Me Wonder: look of the Blocked screen, settings button and settings panel.\n   Lives in its own shadow root, so Instagram's styles can't touch it. */\n\n:host {\n  --bg: #ffffff;\n  --fg: #111111;\n  --muted: #6b6b6b;\n  --line: #e4e4e4;\n  --accent: #2f6f4f;\n  --accent-fg: #ffffff;\n  --shade: rgba(0, 0, 0, 0.35);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --bg: #121212;\n    --fg: #f2f2f2;\n    --muted: #a0a0a0;\n    --line: #2c2c2c;\n    --accent: #6fbf94;\n    --accent-fg: #0b1f14;\n    --shade: rgba(0, 0, 0, 0.6);\n  }\n}\n\n/* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */\n.blocked, .gear, .backdrop {\n  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  color: var(--fg);\n}\n\n[hidden] { display: none !important; }\nbutton { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }\n\n/* Blocked screen */\n.blocked {\n  position: fixed;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  background: var(--bg);\n  pointer-events: auto;\n}\n.blocked .card { max-width: 340px; text-align: center; }\n.blocked .leaf { width: 44px; height: 44px; color: var(--accent); }\n.blocked h1 { font-size: 21px; margin: 12px 0 8px; }\n.blocked p { color: var(--muted); margin: 0 0 22px; }\n.primary {\n  border: 0;\n  border-radius: 10px;\n  padding: 12px 26px;\n  background: var(--accent);\n  color: var(--accent-fg);\n  font-weight: 600;\n}\n\n/* Small settings button (Safari only) */\n.gear {\n  position: fixed;\n  right: 10px;\n  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: 1px solid var(--line);\n  background: var(--bg);\n  color: var(--muted);\n  opacity: 0.55;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  pointer-events: auto;\n}\n.gear svg { width: 18px; height: 18px; }\n\n/* Settings panel */\n.backdrop {\n  position: fixed;\n  inset: 0;\n  background: var(--shade);\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  pointer-events: auto;\n}\n.sheet {\n  width: 100%;\n  max-width: 480px;\n  max-height: 88vh;\n  overflow-y: auto;\n  background: var(--bg);\n  border-radius: 16px 16px 0 0;\n  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);\n}\n.sheet-head { display: flex; align-items: center; justify-content: space-between; }\n.sheet h2 { font-size: 18px; margin: 0; }\n.close { border: 0; background: none; font-size: 22px; padding: 4px 8px; color: var(--muted); }\n.toggles { list-style: none; margin: 10px 0; padding: 0; }\n.toggles li { border-bottom: 1px solid var(--line); }\n.toggles label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }\n.toggles input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }\n.secondary {\n  width: 100%;\n  margin-top: 14px;\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  padding: 11px;\n  background: none;\n}\n.status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }\n.manual { width: 100%; height: 120px; margin-top: 8px; font: 12px/1.3 ui-monospace, Menlo, monospace; }\n.foot { color: var(--muted); font-size: 12px; margin: 12px 0 0; }\n";
+  var ui_default = "/* Let Me Wonder: look of the Blocked screen, settings button and settings panel.\n   Lives in its own shadow root, so Instagram's styles can't touch it. */\n\n:host {\n  --bg: #ffffff;\n  --fg: #111111;\n  --muted: #6b6b6b;\n  --line: #e4e4e4;\n  --accent: #2f6f4f;\n  --accent-fg: #ffffff;\n  --shade: rgba(0, 0, 0, 0.35);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --bg: #121212;\n    --fg: #f2f2f2;\n    --muted: #a0a0a0;\n    --line: #2c2c2c;\n    --accent: #6fbf94;\n    --accent-fg: #0b1f14;\n    --shade: rgba(0, 0, 0, 0.6);\n  }\n}\n\n/* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */\n.blocked, .gear, .backdrop {\n  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  color: var(--fg);\n}\n\n[hidden] { display: none !important; }\nbutton { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }\n\n/* Blocked screen */\n.blocked {\n  position: fixed;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  background: var(--bg);\n  pointer-events: auto;\n}\n.blocked .card { max-width: 340px; text-align: center; }\n.blocked .leaf { width: 44px; height: 44px; color: var(--accent); }\n.blocked h1 { font-size: 21px; margin: 12px 0 8px; }\n.blocked p { color: var(--muted); margin: 0 0 22px; }\n.primary {\n  border: 0;\n  border-radius: 10px;\n  padding: 12px 26px;\n  background: var(--accent);\n  color: var(--accent-fg);\n  font-weight: 600;\n}\n\n/* Small settings button (Safari only) */\n.gear {\n  position: fixed;\n  right: 10px;\n  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: 1px solid var(--line);\n  background: var(--bg);\n  color: var(--muted);\n  opacity: 0.55;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  pointer-events: auto;\n}\n\n.gear[data-place='side'] {\n  top: 40%;\n  bottom: auto;\n}\n.gear svg { width: 18px; height: 18px; }\n\n/* Settings panel */\n.backdrop {\n  position: fixed;\n  inset: 0;\n  background: var(--shade);\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  pointer-events: auto;\n}\n.sheet {\n  width: 100%;\n  max-width: 480px;\n  max-height: 88vh;\n  overflow-y: auto;\n  background: var(--bg);\n  border-radius: 16px 16px 0 0;\n  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);\n}\n.sheet-head { display: flex; align-items: center; justify-content: space-between; }\n.sheet h2 { font-size: 18px; margin: 0; }\n.close { border: 0; background: none; font-size: 22px; padding: 4px 8px; color: var(--muted); }\n.toggles { list-style: none; margin: 10px 0; padding: 0; }\n.toggles li { border-bottom: 1px solid var(--line); }\n.toggles label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }\n.toggles input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }\n.secondary {\n  width: 100%;\n  margin-top: 14px;\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  padding: 11px;\n  background: none;\n}\n.status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }\n.manual { width: 100%; height: 120px; margin-top: 8px; font: 12px/1.3 ui-monospace, Menlo, monospace; }\n.foot { color: var(--muted); font-size: 12px; margin: 12px 0 0; }\n";
 
   // src/filter/ui.js
   var LEAF_ICON = '<svg class="leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14z"/><path d="M5 19l7-7"/></svg>';
@@ -584,6 +610,11 @@
         gearWanted = visible;
         refreshGear();
       },
+      // 'side' moves it to the right edge, out of the way of the story viewer's buttons.
+      setGearPlace(place) {
+        if (place) gear.dataset.place = place;
+        else delete gear.dataset.place;
+      },
       openPanel
     };
   }
@@ -592,19 +623,25 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.3" : "dev";
+  var VERSION = true ? "0.3.4" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
   var COVER_ATTR = "data-lmw-cover";
-  var NO_GEAR_PAGES = ["direct", "stories", "login"];
+  var NO_GEAR_PAGES = ["direct", "login"];
   var HIDE_CSS = "{display:none!important}";
   var INVISIBLE_CSS = "{visibility:hidden!important;pointer-events:none!important}";
   var BACK_FALLBACK_MS = 1500;
-  function coverCss(sel, label) {
+  var SMALL_COVER_PX = 36;
+  var STORY_RETRY_MS = 1500;
+  var STORY_MAX_TRIES = 3;
+  function coverCss(scope, target, label) {
+    const sel = `${scope} ${target}`;
+    const small = `${scope}[data-lmw-on~="smallCovers"] ${target}`;
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="24"><text x="120" y="16" text-anchor="middle" font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#8e8e8e">${label}</text></svg>`;
     return `${sel}{pointer-events:none!important;background-image:url("data:image/svg+xml,${encodeURIComponent(svg)}")!important;background-position:center!important;background-repeat:no-repeat!important}
-${sel} *{visibility:hidden!important}`;
+${sel} *{visibility:hidden!important}
+${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:${SMALL_COVER_PX}px!important;overflow:hidden!important}`;
   }
   function coverLabel(toggle) {
     const t = TOGGLES.find((x) => x.id === toggle);
@@ -623,6 +660,7 @@ ${sel} *{visibility:hidden!important}`;
   }
   var MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
   var backLabels = new Set(HOME_FEED.backLabels.map(normalize2));
+  var nextLabels = new Set(STORIES.nextLabels.map(normalize2));
   function sessionTake(key) {
     try {
       const v = sessionStorage.getItem(key);
@@ -666,10 +704,12 @@ ${sel} *{visibility:hidden!important}`;
       return withSaved(saved);
     }
     function setSettings(partial) {
+      let resized = false;
       for (const k of Object.keys(settings)) {
         if (typeof partial[k] !== "boolean" || partial[k] === settings[k]) continue;
         settings[k] = partial[k];
         log.add(`switch ${k} ${settings[k] ? "on" : "off"}`);
+        if (k === "smallCovers") resized = true;
       }
       if (host !== "app") {
         try {
@@ -678,19 +718,21 @@ ${sel} *{visibility:hidden!important}`;
         }
       }
       applyRootState();
+      if (resized) remeasure(true);
       lastPath = null;
       checkPath();
     }
     function buildCss() {
       const parts = [filter_default];
       for (const t of TOGGLES) {
-        const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR2}~="${t.id}"]`;
-        parts.push(`${marked}:not([${COVER_ATTR}])${HIDE_CSS}`, coverCss(`${marked}[${COVER_ATTR}]`, coverLabel(t.id)));
+        const scope = `html[data-lmw-on~="${t.id}"]`;
+        const marked = `[${HIDE_ATTR2}~="${t.id}"]`;
+        parts.push(`${scope} ${marked}:not([${COVER_ATTR}])${HIDE_CSS}`, coverCss(scope, `${marked}[${COVER_ATTR}]`, coverLabel(t.id)));
       }
       for (const rule of CSS_RULES) {
         const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : "");
         for (const sel of rule.css) {
-          if (rule.cover) parts.push(coverCss(`${scope} ${sel}`, coverLabel(rule.toggle)));
+          if (rule.cover) parts.push(coverCss(scope, sel, coverLabel(rule.toggle)));
           else parts.push(`${scope} ${sel}${rule.invisible ? INVISIBLE_CSS : HIDE_CSS}`);
         }
       }
@@ -702,6 +744,7 @@ ${sel} *{visibility:hidden!important}`;
       if (blocked) root.setAttribute("data-lmw-blocked", blocked.toggle);
       else root.removeAttribute("data-lmw-blocked");
       ui.setGearVisible((host === "app" || settings.showGear) && !NO_GEAR_PAGES.includes(page));
+      ui.setGearPlace(page === "stories" ? "side" : null);
     }
     function pageLabel() {
       const variant = page === "home" && new URLSearchParams(location.search).get(HOME_FEED.param);
@@ -950,7 +993,12 @@ ${sel} *{visibility:hidden!important}`;
         if (text.length > MAX_LABEL_LENGTH * 2) return;
         rules = labelIndex.get(normalize2(text));
       }
-      if (rules && el2) applyLabel(el2, rules);
+      if (!rules || !el2) return;
+      if (page === "stories" && rules.some((r) => r.hide.includes("story")) && !el2.closest(`${STRUCTURE.post}, [${HIDE_ATTR2}]`)) {
+        storyLabels.add(el2);
+        checkStoryAds();
+      }
+      applyLabel(el2, rules);
     }
     function scan(node) {
       if (LABEL_SKIP_PAGES.includes(page)) return;
@@ -991,15 +1039,102 @@ ${sel} *{visibility:hidden!important}`;
         }
       }
       afterScan();
+      remeasure();
       if (added.size || removed.size) {
         const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(" ");
         log.add(`posts ${change}, ${document.querySelectorAll(STRUCTURE.post).length} in the page`);
       }
     }
+    const storyLabels = /* @__PURE__ */ new Set();
+    let storyAd = null;
+    let skipping = false;
+    let storyOutlineKept = false;
+    function isShown(el2) {
+      return el2.getClientRects().length > 0 && getComputedStyle(el2).visibility !== "hidden";
+    }
+    function checkStoryAds() {
+      if (page !== "stories" || !settings.ads || blocked) return;
+      for (const label of storyLabels) {
+        if (!label.isConnected) storyLabels.delete(label);
+        else if (isShown(label)) return skipStoryAd(label);
+      }
+    }
+    function skipStoryAd(label) {
+      const now = Date.now();
+      const same = storyAd && storyAd.label === label;
+      if (skipping || same && now - storyAd.at < STORY_RETRY_MS) return;
+      const tries = same && storyAd.path === location.pathname ? storyAd.tries + 1 : 1;
+      if (tries > STORY_MAX_TRIES) return;
+      storyAd = { label, path: location.pathname, tries, at: now };
+      if (!storyOutlineKept) {
+        storyOutlineKept = true;
+        log.note("the story viewer when an ad showed", outlineOf(viewerOf(label)));
+      }
+      pauseMedia();
+      const next = nextControl(label);
+      log.add(`story ad: skipped with ${next ? "the next button" : "the right-arrow key"}${tries > 1 ? `, try ${tries}` : ""}`);
+      skipping = true;
+      try {
+        if (next) press(next);
+        else label.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", keyCode: 39, bubbles: true }));
+      } finally {
+        skipping = false;
+      }
+    }
+    function viewerOf(label) {
+      let node = label;
+      while (node.parentElement && node.parentElement !== document.body && node.getBoundingClientRect().height < window.innerHeight * 0.6) {
+        node = node.parentElement;
+      }
+      return node;
+    }
+    function nextControl(label) {
+      const ancestors = [];
+      for (let n = label; n; n = n.parentElement) ancestors.push(n);
+      let best = null;
+      let bestAt = Infinity;
+      for (const el2 of document.querySelectorAll("[aria-label]")) {
+        if (!nextLabels.has(normalize2(el2.getAttribute("aria-label"))) || el2.closest(STRUCTURE.post) || !isShown(el2)) continue;
+        const control = el2.closest('button, [role="button"], a') || el2;
+        const at = ancestors.findIndex((a) => a.contains(control));
+        if (at >= 0 && at < bestAt) {
+          best = control;
+          bestAt = at;
+        }
+      }
+      return best;
+    }
+    function press(el2) {
+      if (el2 instanceof HTMLElement) el2.click();
+      else el2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }
     function watchFeed() {
       if (page !== "home" || blocked || document.hidden) return;
       const post = document.querySelector(STRUCTURE.post);
       log.checkFeed(post ? post.parentElement : null);
+      remeasure();
+    }
+    let coversSeen = -1;
+    function coverCount() {
+      let n = document.querySelectorAll(`[${COVER_ATTR}]`).length;
+      for (const rule of CSS_RULES) {
+        if (!rule.cover || !settings[rule.toggle] || rule.page && rule.page !== page) continue;
+        for (const sel of rule.css) {
+          try {
+            n += document.querySelectorAll(sel).length;
+          } catch (e) {
+          }
+        }
+      }
+      return n;
+    }
+    function remeasure(force) {
+      if (!force && (!settings.smallCovers || page !== "home")) return;
+      const n = coverCount();
+      if (n === coversSeen && !force) return;
+      coversSeen = n;
+      window.dispatchEvent(new Event("resize"));
+      log.add(`small boxes: ${n} hidden, asked Instagram to measure again`);
     }
     function notifyHost(message) {
       if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -1014,7 +1149,8 @@ ${sel} *{visibility:hidden!important}`;
         settings,
         page,
         events: log.lines(),
-        eventsBefore: log.before()
+        eventsBefore: log.before(),
+        notes: log.notes()
       });
     }
     const ui = createUi({
@@ -1051,6 +1187,7 @@ ${sel} *{visibility:hidden!important}`;
     }
     setInterval(checkPath, 300);
     setInterval(watchFeed, 500);
+    setInterval(checkStoryAds, 400);
     new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
     function openFromHash() {
       if (location.hash === "#lmw" && host !== "app") {

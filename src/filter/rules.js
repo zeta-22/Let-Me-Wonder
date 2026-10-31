@@ -4,7 +4,7 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.10.31b';
+export const RULES_VERSION = '2026.10.31c';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
@@ -19,6 +19,9 @@ export const TOGGLES = [
   { id: 'suggested', label: 'Suggested posts and accounts', default: true, blocked: 'Suggestions are switched off.', covered: 'Suggestion hidden' },
   { id: 'ads', label: 'Ads and sponsored posts', default: true, blocked: 'Ads are switched off.', covered: 'Ad hidden' },
   { id: 'reelSwipe', label: 'Swiping to the next reel', default: true, blocked: 'You watched the reel you opened. Moving on to other reels is switched off.' },
+  // A test, off by default: hidden posts become a small box instead of keeping their size,
+  // and Instagram is asked to measure the feed again. If it doesn't, the feed jumps.
+  { id: 'smallCovers', label: 'Small boxes for hidden posts (test: the feed may jump)', default: false },
 ];
 
 // Home shows Instagram's "Following" feed (only people you follow, newest first)
@@ -108,13 +111,21 @@ export const LABELS = {
 //   block: the whole block around the label, e.g. a "Suggested for you" carousel.
 //          If the label is a heading on its own, the list under it goes too.
 //   after: every post after the label in the same feed (the label itself stays)
+//   story: on a story page, the story is skipped (an ad between stories), see STORIES
 export const LABEL_RULES = [
-  { label: 'sponsored', toggle: 'ads', hide: ['post'] },
+  { label: 'sponsored', toggle: 'ads', hide: ['post', 'story'] },
   { label: 'suggestedForYou', toggle: 'suggested', hide: ['block'] },
   { label: 'suggestedPosts', toggle: 'suggested', hide: ['block', 'after'] },
   { label: 'suggestedReels', toggle: 'suggested', hide: ['block'] },
   { label: 'caughtUp', toggle: 'suggested', hide: ['after'] },
 ];
+
+// Ads between stories are skipped with Instagram's own "next" control in the story
+// viewer, found by its label (or, if there's none, the right-arrow key). Never with the
+// ad's own buttons.
+export const STORIES = {
+  nextLabels: ['Next', 'Avanti', 'Siguiente', 'Suivant', 'Weiter', 'Próximo', 'Volgende', 'Avançar'],
+};
 
 // Label rules are skipped on these pages (a friend could write "Sponsored" in a DM).
 export const LABEL_SKIP_PAGES = ['direct', 'login'];

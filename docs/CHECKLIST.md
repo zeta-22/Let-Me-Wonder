@@ -18,11 +18,15 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Friends' reels:** reels from people you follow appear in the feed;
       suggested reels don't. (To hide every reel, turn on "Reels in the home
       feed": each one then becomes an empty card, the same size, with a small
-      grey "Reel hidden" on it.)
+      grey "Reel hidden" on it. To try small boxes instead, turn on "Small boxes
+      for hidden posts"; if the feed starts jumping again, turn it off.)
 
 ## Should be gone
 - [ ] **Reels tab:** the bottom bar has no Reels button.
 - [ ] **Ads:** scroll about 30 posts; nothing marked *Sponsored*.
+- [ ] **Ads in stories:** watch several stories in a row; an ad (*Sponsorizzato*)
+      disappears by itself within a moment, and the story after it plays. If one
+      stays, tap the settings button on the right edge and copy a problem report.
 - [ ] **Suggestions:** no "Suggested for you" / "Consigli per te" carousels or
       suggested posts in the feed. After **"You're all caught up"**, nothing
       more loads.

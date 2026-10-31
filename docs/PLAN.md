@@ -494,6 +494,37 @@ timeline survives a reload. 40 pass.
 Trade-off: with "Reels in the home feed" on, you scroll past an empty, labelled card
 where each reel was. With it off (the default) friends' reels just show.
 
+### Stage 3, round 5: ads in stories, smaller boxes (2026-10-31)
+What you said (on 0.3.3): the home feed works well now, but there are still ads between
+stories, and the "Reel hidden" box could be much smaller, so it scrolls by easily.
+
+**Ads in stories.** The "Sponsored" rule only hid the post around the label, and stories
+have no post, so story ads went through. The settings button was also hidden on stories,
+so there was no way to send a report from one.
+- A "Sponsored" label that appears on a story page, outside posts and hidden parts, is a
+  story ad (`LABEL_RULES` hide `story`). The filter pauses it and presses Instagram's own
+  "next" control, found by its label (`STORIES.nextLabels`: Avanti, Next, …), or else
+  sends the right-arrow key, which the story viewer answers. Never the ad's own buttons.
+- The same label counts as the same ad until the story had time to change: the fake
+  showed the address moves to the next story a moment before the ad leaves the page,
+  and without this the story after the ad was skipped too. If an ad is still there 1.5 s
+  later it tries again, 3 times at most.
+- The first time, the viewer's outline (anonymous, like the report) is kept in the
+  timeline, so the next report shows how Instagram builds it if skipping fails.
+- On stories, the settings button now shows on the right edge.
+
+**Smaller boxes.** A box smaller than the post is exactly what made the feed jump: Instagram
+measured the post big, and the filter shrank it afterwards. So it's a test switch, off by
+default: "Small boxes for hidden posts". It makes the boxes 36 px tall and sends a
+`resize` event whenever the number of hidden posts changes (and when the switch changes),
+the usual way to make a feed like Instagram's measure its posts again. In the fake, a feed
+that measures again on resize doesn't jump; one that never measures again still does. If
+the feed jumps with it on, switch it off.
+
+Tests: story ad skipped with the next button (the ad's link never tapped, the following
+story not skipped, the outline in the report without names); with the arrow key; not with
+Ads off; a friend's story never skipped; small boxes on a feed that measures again. 44 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

@@ -14,10 +14,10 @@
 //      stays exactly Instagram's: its list, which keeps only the posts near the
 //      screen, and its loading of more posts work as if the filter weren't there.
 
-import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, HOME_FEED } from './rules.js';
+import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, HOME_FEED, STORIES } from './rules.js';
 import { decide, homeRedirect, pageOf } from './routes.js';
 import { withSaved } from './settings.js';
-import { buildReport } from './report.js';
+import { buildReport, outlineOf } from './report.js';
 import { createLog } from './log.js';
 import { createUi } from './ui.js';
 import pageCss from './filter.css';
@@ -27,21 +27,29 @@ const SETTINGS_KEY = 'lmw-settings-v1';
 const FROM_PATH_KEY = 'lmw-from-path';
 const HIDE_ATTR = 'data-lmw-hide';
 const COVER_ATTR = 'data-lmw-cover';
-const NO_GEAR_PAGES = ['direct', 'stories', 'login'];
+const NO_GEAR_PAGES = ['direct', 'login'];
 const HIDE_CSS = '{display:none!important}';
 const INVISIBLE_CSS = '{visibility:hidden!important;pointer-events:none!important}'; // keeps its size
 const BACK_FALLBACK_MS = 1500; // the back arrow didn't move Instagram this long after a tap
+const SMALL_COVER_PX = 36; // a hidden post's box with the "Small boxes" test switch on
+const STORY_RETRY_MS = 1500; // a story ad still showing this long after a skip: try again
+const STORY_MAX_TRIES = 3;
 
 // A covered post keeps its size, so the feed keeps Instagram's own layout. Everything in
-// it is invisible and can't be tapped, and a small grey label says what was there.
-function coverCss(sel, label) {
+// it is invisible and can't be tapped, and a small grey label says what was there. With
+// the smallCovers test switch on, it shrinks to a small box instead.
+// `scope` is the html[...] part of the selector, `target` the rest.
+function coverCss(scope, target, label) {
+  const sel = `${scope} ${target}`;
+  const small = `${scope}[data-lmw-on~="smallCovers"] ${target}`;
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="24"><text x="120" y="16" text-anchor="middle" ' +
     `font-family="system-ui,-apple-system,sans-serif" font-size="13" fill="#8e8e8e">${label}</text></svg>`;
   return (
     `${sel}{pointer-events:none!important;background-image:url("data:image/svg+xml,${encodeURIComponent(svg)}")!important;` +
     'background-position:center!important;background-repeat:no-repeat!important}\n' +
-    `${sel} *{visibility:hidden!important}`
+    `${sel} *{visibility:hidden!important}\n` +
+    `${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:${SMALL_COVER_PX}px!important;overflow:hidden!important}`
   );
 }
 
@@ -71,6 +79,7 @@ for (const rule of LABEL_RULES) {
 }
 const MAX_LABEL_LENGTH = Math.max(...[...labelIndex.keys()].map((k) => k.length)) + 8;
 const backLabels = new Set(HOME_FEED.backLabels.map(normalize));
+const nextLabels = new Set(STORIES.nextLabels.map(normalize));
 
 function sessionTake(key) {
   try {
@@ -122,10 +131,12 @@ function start() {
   }
 
   function setSettings(partial) {
+    let resized = false;
     for (const k of Object.keys(settings)) {
       if (typeof partial[k] !== 'boolean' || partial[k] === settings[k]) continue;
       settings[k] = partial[k];
       log.add(`switch ${k} ${settings[k] ? 'on' : 'off'}`);
+      if (k === 'smallCovers') resized = true;
     }
     if (host !== 'app') {
       try {
@@ -135,6 +146,7 @@ function start() {
       }
     }
     applyRootState();
+    if (resized) remeasure(true); // hidden posts just changed size, both ways
     lastPath = null; // re-check the current page with the new switches
     checkPath();
   }
@@ -143,14 +155,15 @@ function start() {
   function buildCss() {
     const parts = [pageCss];
     for (const t of TOGGLES) {
-      const marked = `html[data-lmw-on~="${t.id}"] [${HIDE_ATTR}~="${t.id}"]`;
-      parts.push(`${marked}:not([${COVER_ATTR}])${HIDE_CSS}`, coverCss(`${marked}[${COVER_ATTR}]`, coverLabel(t.id)));
+      const scope = `html[data-lmw-on~="${t.id}"]`;
+      const marked = `[${HIDE_ATTR}~="${t.id}"]`;
+      parts.push(`${scope} ${marked}:not([${COVER_ATTR}])${HIDE_CSS}`, coverCss(scope, `${marked}[${COVER_ATTR}]`, coverLabel(t.id)));
     }
     for (const rule of CSS_RULES) {
       const scope = `html[data-lmw-on~="${rule.toggle}"]` + (rule.page ? `[data-lmw-page="${rule.page}"]` : '');
       // One block per selector, so a selector a browser doesn't support can't disable the others.
       for (const sel of rule.css) {
-        if (rule.cover) parts.push(coverCss(`${scope} ${sel}`, coverLabel(rule.toggle)));
+        if (rule.cover) parts.push(coverCss(scope, sel, coverLabel(rule.toggle)));
         else parts.push(`${scope} ${sel}${rule.invisible ? INVISIBLE_CSS : HIDE_CSS}`);
       }
     }
@@ -164,6 +177,7 @@ function start() {
     else root.removeAttribute('data-lmw-blocked');
     // In the app the button is the only way to its settings, so it can't be hidden there.
     ui.setGearVisible((host === 'app' || settings.showGear) && !NO_GEAR_PAGES.includes(page));
+    ui.setGearPlace(page === 'stories' ? 'side' : null);
   }
 
   // --- pages and navigation ---------------------------------------------------
@@ -467,7 +481,13 @@ function start() {
       if (text.length > MAX_LABEL_LENGTH * 2) return;
       rules = labelIndex.get(normalize(text));
     }
-    if (rules && el) applyLabel(el, rules);
+    if (!rules || !el) return;
+    // On a story page, a "Sponsored" label outside any post or hidden part is a story ad.
+    if (page === 'stories' && rules.some((r) => r.hide.includes('story')) && !el.closest(`${STRUCTURE.post}, [${HIDE_ATTR}]`)) {
+      storyLabels.add(el);
+      checkStoryAds();
+    }
+    applyLabel(el, rules);
   }
 
   function scan(node) {
@@ -514,10 +534,92 @@ function start() {
       }
     }
     afterScan();
+    remeasure();
     if (added.size || removed.size) {
       const change = [added.size && `+${added.size}`, removed.size && `-${removed.size}`].filter(Boolean).join(' ');
       log.add(`posts ${change}, ${document.querySelectorAll(STRUCTURE.post).length} in the page`);
     }
+  }
+
+  // --- ads between stories -------------------------------------------------------
+  // A story ad has the same "Sponsored" label as a feed ad, but no post around it. The
+  // filter pauses it and moves on to the next story with Instagram's own "next" control
+  // (STORIES.nextLabels), or else the right-arrow key, which the story viewer answers.
+  // Never with the ad's own buttons. The first time, the viewer's outline is kept for
+  // the problem report, in case Instagram changes how its stories are built.
+  const storyLabels = new Set(); // "Sponsored" labels that appeared on a story page
+  let storyAd = null; // { label, path, tries, at }: the ad being skipped
+  let skipping = false;
+  let storyOutlineKept = false;
+
+  function isShown(el) {
+    return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  }
+
+  function checkStoryAds() {
+    if (page !== 'stories' || !settings.ads || blocked) return;
+    for (const label of storyLabels) {
+      if (!label.isConnected) storyLabels.delete(label);
+      else if (isShown(label)) return skipStoryAd(label);
+    }
+  }
+
+  function skipStoryAd(label) {
+    const now = Date.now();
+    // The same label is the same ad until the story had time to change: Instagram moves the
+    // address to the next story a moment before the ad leaves the page. A label still there
+    // later is the ad that didn't go, or a new ad reusing it (on a new address).
+    const same = storyAd && storyAd.label === label;
+    if (skipping || (same && now - storyAd.at < STORY_RETRY_MS)) return;
+    const tries = same && storyAd.path === location.pathname ? storyAd.tries + 1 : 1;
+    if (tries > STORY_MAX_TRIES) return;
+    storyAd = { label, path: location.pathname, tries, at: now };
+    if (!storyOutlineKept) {
+      storyOutlineKept = true;
+      log.note('the story viewer when an ad showed', outlineOf(viewerOf(label)));
+    }
+    pauseMedia();
+    const next = nextControl(label);
+    log.add(`story ad: skipped with ${next ? 'the next button' : 'the right-arrow key'}${tries > 1 ? `, try ${tries}` : ''}`);
+    skipping = true;
+    try {
+      if (next) press(next);
+      else label.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, bubbles: true }));
+    } finally {
+      skipping = false;
+    }
+  }
+
+  // The part of the page holding the story: the label's ancestor as tall as most of the screen.
+  function viewerOf(label) {
+    let node = label;
+    while (node.parentElement && node.parentElement !== document.body && node.getBoundingClientRect().height < window.innerHeight * 0.6) {
+      node = node.parentElement;
+    }
+    return node;
+  }
+
+  // Instagram's "next" control closest to the label: the one sharing its deepest ancestor.
+  function nextControl(label) {
+    const ancestors = [];
+    for (let n = label; n; n = n.parentElement) ancestors.push(n);
+    let best = null;
+    let bestAt = Infinity;
+    for (const el of document.querySelectorAll('[aria-label]')) {
+      if (!nextLabels.has(normalize(el.getAttribute('aria-label'))) || el.closest(STRUCTURE.post) || !isShown(el)) continue;
+      const control = el.closest('button, [role="button"], a') || el;
+      const at = ancestors.findIndex((a) => a.contains(control));
+      if (at >= 0 && at < bestAt) {
+        best = control;
+        bestAt = at;
+      }
+    }
+    return best;
+  }
+
+  function press(el) {
+    if (el instanceof HTMLElement) el.click();
+    else el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   }
 
   // --- the feed, for the report's timeline ---------------------------------------
@@ -526,6 +628,37 @@ function start() {
     if (page !== 'home' || blocked || document.hidden) return;
     const post = document.querySelector(STRUCTURE.post);
     log.checkFeed(post ? post.parentElement : null);
+    remeasure();
+  }
+
+  // --- the "Small boxes" test ------------------------------------------------------
+  // A small box shrinks a post after Instagram measured it, which is what made the feed
+  // jump. A resize event is the usual way to ask a feed like Instagram's to measure its
+  // posts again: sent whenever the number of hidden posts changes.
+  let coversSeen = -1;
+
+  function coverCount() {
+    let n = document.querySelectorAll(`[${COVER_ATTR}]`).length;
+    for (const rule of CSS_RULES) {
+      if (!rule.cover || !settings[rule.toggle] || (rule.page && rule.page !== page)) continue;
+      for (const sel of rule.css) {
+        try {
+          n += document.querySelectorAll(sel).length;
+        } catch (e) {
+          /* a selector this browser doesn't support */
+        }
+      }
+    }
+    return n;
+  }
+
+  function remeasure(force) {
+    if (!force && (!settings.smallCovers || page !== 'home')) return;
+    const n = coverCount();
+    if (n === coversSeen && !force) return;
+    coversSeen = n;
+    window.dispatchEvent(new Event('resize'));
+    log.add(`small boxes: ${n} hidden, asked Instagram to measure again`);
   }
 
   // --- talking to the Android app (no-op in Safari) ---------------------------
@@ -544,6 +677,7 @@ function start() {
       page,
       events: log.lines(),
       eventsBefore: log.before(),
+      notes: log.notes(),
     });
   }
 
@@ -587,6 +721,7 @@ function start() {
   }
   setInterval(checkPath, 300);
   setInterval(watchFeed, 500);
+  setInterval(checkStoryAds, 400); // an ad still showing after a skip, or the next one
   new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
 
   function openFromHash() {

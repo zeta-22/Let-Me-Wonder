@@ -138,6 +138,11 @@ export function createUi(options) {
       gearWanted = visible;
       refreshGear();
     },
+    // 'side' moves it to the right edge, out of the way of the story viewer's buttons.
+    setGearPlace(place) {
+      if (place) gear.dataset.place = place;
+      else delete gear.dataset.place;
+    },
     openPanel,
   };
 }
