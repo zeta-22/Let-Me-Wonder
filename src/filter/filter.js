@@ -185,6 +185,7 @@ function start() {
     else root.removeAttribute('data-lmw-blocked');
     // In the app the button is the only way to its settings, so it can't be hidden there.
     ui.setGearVisible((host === 'app' || settings.showGear) && !NO_GEAR_PAGES.includes(page));
+    guardScrolling(); // touches and the wheel: only listened to where a reel can be on screen
     updateShield(); // a reel's page, or the Blocked screen: no shield on it
     // On the right edge on stories and reels, out of the way of Instagram's buttons there.
     ui.setGearPlace(page === 'stories' || shieldOn ? 'side' : null);
@@ -339,13 +340,25 @@ function start() {
     return false;
   }
 
+  // The item of a feed a node is in: the node, or its ancestor, sitting next to posts in
+  // their list (a post, or a block between posts). Null outside a feed.
+  function feedItemOf(node) {
+    for (let n = node; n && n.parentElement && !n.matches(STRUCTURE.boundary); n = n.parentElement) {
+      if (hasOutside(n.parentElement, n, STRUCTURE.post)) return n;
+    }
+    return null;
+  }
+
+  // Anything hidden in a feed keeps its size, covered: a post, a block between posts, or
+  // any part of one, however deep it sits. On Home, everything does. Instagram's feed
+  // measures each item once; one that shrank afterwards made the whole feed jump back, and
+  // show the posts you'd just seen again. Elsewhere (notifications, a profile) it's removed.
   function mark(node, toggle) {
     if (!node || node === root || node.matches(STRUCTURE.boundary)) return;
     const current = (node.getAttribute(HIDE_ATTR) || '').split(' ').filter(Boolean);
-    if (!current.includes(toggle)) node.setAttribute(HIDE_ATTR, current.concat(toggle).join(' '));
-    // Posts, and blocks sitting between posts in a feed, are covered: they keep their size.
-    const inFeed = node.matches(STRUCTURE.post) || (node.parentElement && hasOutside(node.parentElement, node, STRUCTURE.post));
-    if (inFeed) node.setAttribute(COVER_ATTR, '');
+    if (current.includes(toggle)) return; // already hidden: nothing to change, nothing to measure
+    if (page === 'home' || node.closest(STRUCTURE.post) || feedItemOf(node)) node.setAttribute(COVER_ATTR, '');
+    node.setAttribute(HIDE_ATTR, current.concat(toggle).join(' '));
   }
 
   function isMarked(node, toggle) {
@@ -378,12 +391,15 @@ function start() {
   }
 
   // The block around a label: its post, or the largest group of elements around
-  // it that holds no other content or heading and doesn't cross a page landmark.
+  // it that holds no other content or heading and doesn't cross a page landmark. In a
+  // feed it may grow up to the feed's item however deep the label is (Instagram nests its
+  // labels in many boxes); elsewhere up to STRUCTURE.maxLevels.
   function blockAround(label) {
     const post = label.closest(STRUCTURE.post);
     if (post) return post;
+    const item = feedItemOf(label);
     let node = label;
-    for (let i = 0; i < STRUCTURE.maxLevels; i++) {
+    for (let i = 0; node !== item && (item || i < STRUCTURE.maxLevels); i++) {
       const parent = node.parentElement;
       if (!parent || parent.matches(STRUCTURE.boundary)) break;
       if (
@@ -455,6 +471,18 @@ function start() {
     return node.id === 'lmw-ui' || node.id === 'lmw-style';
   }
 
+  // An element's text, or null as soon as it's longer than `max`: reading only the start of
+  // a big element, not all of it, for every short text in every post Instagram adds.
+  function shortText(el, max) {
+    let text = '';
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+      text += t.data;
+      if (text.length > max) return null;
+    }
+    return text;
+  }
+
   function checkText(textNode) {
     const raw = textNode.data;
     if (!raw || raw.length > MAX_LABEL_LENGTH * 2) return;
@@ -465,8 +493,8 @@ function start() {
     for (let up = 0; !rules && up < 3 && el; up++) {
       if (up > 0) el = el.parentElement;
       if (!el) return;
-      const text = el.textContent;
-      if (text.length > MAX_LABEL_LENGTH * 2) return;
+      const text = shortText(el, MAX_LABEL_LENGTH * 2);
+      if (text === null) return;
       rules = labelIndex.get(normalize(text));
     }
     if (!rules || !el) return;
@@ -971,11 +999,28 @@ function start() {
   }
 
   const INPUT_EVENTS = [
-    'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'touchstart', 'touchmove', 'touchend', 'touchcancel',
-    'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'wheel',
+    'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'touchend', 'touchcancel',
+    'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu',
     'keydown', 'keypress', 'keyup', 'gesturestart', 'gesturechange', 'gestureend', 'selectstart', 'dragstart',
   ];
   for (const type of INPUT_EVENTS) window.addEventListener(type, guard, { capture: true, passive: false });
+
+  // A finger going down or moving, and the wheel: while anything may stop them, the browser
+  // waits for the page's code before it scrolls, and with Instagram busy (adding posts,
+  // starting a video) scrolling sticks for a moment. So the filter listens to them only where
+  // a reel can be on screen: never on Home and the other pages where swiping is free.
+  const SCROLL_EVENTS = ['touchstart', 'touchmove', 'wheel'];
+  let guardingScroll = false;
+
+  function guardScrolling() {
+    const on = !!settings.reelSwipe && !FREE_SWIPE_PAGES.includes(page);
+    if (on === guardingScroll) return;
+    guardingScroll = on;
+    for (const type of SCROLL_EVENTS) {
+      if (on) window.addEventListener(type, guard, { capture: true, passive: false });
+      else window.removeEventListener(type, guard, { capture: true });
+    }
+  }
 
   // A text box Instagram focuses while a reel is on screen, without your tap just before
   // (a swipe, a long press, or by itself), is closed right away: no keyboard over a reel.

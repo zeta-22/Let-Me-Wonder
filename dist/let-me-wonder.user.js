@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.4.6
+// @version      0.4.7
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.11.02f";
+  var RULES_VERSION = "2026.11.02g";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
@@ -62,8 +62,10 @@
   ];
   var REEL_SWIPE = { toggle: "reelSwipe", path: "^/(?:[^/]+/)?reels?/([^/]+)/?$" };
   var CSS_RULES = [
-    { toggle: "reelsTab", css: ['a[href$="/reels/"]'] },
+    { toggle: "reelsTab", css: ['a[href$="/reels/"]:not(html[data-lmw-page="home"] main a)'] },
     // Reels tab, also on profiles
+    // A link to the reels inside the home feed ("more reels" under a block): it keeps its size.
+    { toggle: "reelsTab", page: "home", invisible: true, css: ['main a[href$="/reels/"]'] },
     {
       toggle: "feedReels",
       page: "home",
@@ -420,6 +422,7 @@
   }
   var JUMP_PX = 400;
   var LIST_PX = 100;
+  var SAVE_MS = 1e3;
   var signed = (n) => (n > 0 ? "+" : "") + n;
   function createLog() {
     const previous = loadPrevious();
@@ -430,6 +433,7 @@
     let lastHeight = 0;
     let lastPadding = null;
     let fingers = 0;
+    let saveTimer = 0;
     function add(text) {
       const s = ((Date.now() - start2) / 1e3).toFixed(1);
       lines.push(`${s}s y=${Math.round(window.scrollY)} ${text}`);
@@ -437,6 +441,11 @@
       save();
     }
     function save() {
+      if (!saveTimer) saveTimer = setTimeout(saveNow, SAVE_MS);
+    }
+    function saveNow() {
+      clearTimeout(saveTimer);
+      saveTimer = 0;
       try {
         localStorage.setItem(STORE_KEY, JSON.stringify({ start: start2, lines, notes }));
       } catch (e) {
@@ -479,7 +488,11 @@
     window.addEventListener("touchstart", (e) => fingers = e.touches.length, passive);
     window.addEventListener("touchend", (e) => fingers = e.touches.length, passive);
     window.addEventListener("touchcancel", () => fingers = 0, passive);
-    document.addEventListener("visibilitychange", () => add(document.hidden ? "app in the background" : "app back on screen"));
+    document.addEventListener("visibilitychange", () => {
+      add(document.hidden ? "app in the background" : "app back on screen");
+      if (document.hidden) saveNow();
+    });
+    window.addEventListener("pagehide", saveNow);
     return { add, note, checkFeed, before, notes: allNotes, lines: () => lines.slice() };
   }
 
@@ -737,7 +750,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.4.6" : "dev";
+  var VERSION = true ? "0.4.7" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -864,6 +877,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       if (blocked) root.setAttribute("data-lmw-blocked", blocked.toggle);
       else root.removeAttribute("data-lmw-blocked");
       ui.setGearVisible((host === "app" || settings.showGear) && !NO_GEAR_PAGES.includes(page));
+      guardScrolling();
       updateShield();
       ui.setGearPlace(page === "stories" || shieldOn ? "side" : null);
     }
@@ -993,12 +1007,18 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       for (const x of parent.querySelectorAll(selector)) if (!inside.contains(x)) return true;
       return false;
     }
+    function feedItemOf(node) {
+      for (let n = node; n && n.parentElement && !n.matches(STRUCTURE.boundary); n = n.parentElement) {
+        if (hasOutside(n.parentElement, n, STRUCTURE.post)) return n;
+      }
+      return null;
+    }
     function mark(node, toggle) {
       if (!node || node === root || node.matches(STRUCTURE.boundary)) return;
       const current = (node.getAttribute(HIDE_ATTR2) || "").split(" ").filter(Boolean);
-      if (!current.includes(toggle)) node.setAttribute(HIDE_ATTR2, current.concat(toggle).join(" "));
-      const inFeed = node.matches(STRUCTURE.post) || node.parentElement && hasOutside(node.parentElement, node, STRUCTURE.post);
-      if (inFeed) node.setAttribute(COVER_ATTR, "");
+      if (current.includes(toggle)) return;
+      if (page === "home" || node.closest(STRUCTURE.post) || feedItemOf(node)) node.setAttribute(COVER_ATTR, "");
+      node.setAttribute(HIDE_ATTR2, current.concat(toggle).join(" "));
     }
     function isMarked(node, toggle) {
       return (node.getAttribute(HIDE_ATTR2) || "").split(" ").includes(toggle);
@@ -1026,8 +1046,9 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     function blockAround(label) {
       const post = label.closest(STRUCTURE.post);
       if (post) return post;
+      const item = feedItemOf(label);
       let node = label;
-      for (let i = 0; i < STRUCTURE.maxLevels; i++) {
+      for (let i = 0; node !== item && (item || i < STRUCTURE.maxLevels); i++) {
         const parent = node.parentElement;
         if (!parent || parent.matches(STRUCTURE.boundary)) break;
         if (hasOutside(parent, node, STRUCTURE.content) || hasOutside(parent, node, STRUCTURE.heading) || hasOutside(parent, node, STRUCTURE.boundary)) {
@@ -1086,6 +1107,15 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     function isOurs(node) {
       return node.id === "lmw-ui" || node.id === "lmw-style";
     }
+    function shortText(el2, max) {
+      let text = "";
+      const walker = document.createTreeWalker(el2, NodeFilter.SHOW_TEXT);
+      for (let t = walker.nextNode(); t; t = walker.nextNode()) {
+        text += t.data;
+        if (text.length > max) return null;
+      }
+      return text;
+    }
     function checkText(textNode) {
       const raw = textNode.data;
       if (!raw || raw.length > MAX_LABEL_LENGTH * 2) return;
@@ -1095,8 +1125,8 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       for (let up = 0; !rules && up < 3 && el2; up++) {
         if (up > 0) el2 = el2.parentElement;
         if (!el2) return;
-        const text = el2.textContent;
-        if (text.length > MAX_LABEL_LENGTH * 2) return;
+        const text = shortText(el2, MAX_LABEL_LENGTH * 2);
+        if (text === null) return;
         rules = labelIndex.get(normalize2(text));
       }
       if (!rules || !el2) return;
@@ -1493,8 +1523,6 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       "pointermove",
       "pointerup",
       "pointercancel",
-      "touchstart",
-      "touchmove",
       "touchend",
       "touchcancel",
       "mousedown",
@@ -1504,7 +1532,6 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       "dblclick",
       "auxclick",
       "contextmenu",
-      "wheel",
       "keydown",
       "keypress",
       "keyup",
@@ -1515,6 +1542,17 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       "dragstart"
     ];
     for (const type of INPUT_EVENTS) window.addEventListener(type, guard, { capture: true, passive: false });
+    const SCROLL_EVENTS = ["touchstart", "touchmove", "wheel"];
+    let guardingScroll = false;
+    function guardScrolling() {
+      const on = !!settings.reelSwipe && !FREE_SWIPE_PAGES.includes(page);
+      if (on === guardingScroll) return;
+      guardingScroll = on;
+      for (const type of SCROLL_EVENTS) {
+        if (on) window.addEventListener(type, guard, { capture: true, passive: false });
+        else window.removeEventListener(type, guard, { capture: true });
+      }
+    }
     window.addEventListener(
       "focusin",
       (e) => {

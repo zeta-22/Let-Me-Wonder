@@ -11,7 +11,10 @@ screen and paste it to Claude, saying which item failed.
       them all, without getting stuck on the loading spinner, and without the
       same posts showing up again further down.
 - [ ] **No jumping back:** scrolling down, the feed never jumps back up to a
-      post you already passed.
+      post you already passed, also past a "Consigli per te" block (an empty
+      card with a grey "Suggestion hidden" on it).
+- [ ] **Smooth scrolling:** the feed follows your finger right away, also while
+      new posts are loading or a friend's reel starts playing.
 - [ ] **Friends' reels:** reels from people you follow appear in the feed;
       suggested reels don't. (To hide every reel, turn on "Reels in the home
       feed, also from people you follow", in Display, no code needed: each one

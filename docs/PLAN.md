@@ -861,6 +861,39 @@ closed. `npm run smoke`: the shield is up and a tap reaches Instagram (the sound
 Published, as you said: Android (EAS Update, channel `preview`, update group `f52a279c`),
 and merged to `main` for the iPhone.
 
+### Stage 3, round 18: Home scrolls smoothly again, and never jumps back (2026-11-02)
+What you said (on 0.4.6): reels from chats are fine now, but Home doesn't scroll smoothly;
+now and then it sticks, shows the same posts again and goes round in a loop, as it did before
+0.3.3.
+
+Two causes, both reproduced in the fake:
+- **Jumping back.** Since 0.3.6 Home is Instagram's classic feed, which mixes in blocks that
+  aren't posts ("Consigli per te"), not the Following feed of 0.3.3. Instagram nests their
+  labels in many boxes: the filter's block stopped 8 levels up, inside the item, and was
+  hidden with `display:none` (a "/reels/" link in it too) after Instagram had measured the
+  item. That's 0.3.2's jump again: past every such block, the feed jumped back. A new fake,
+  `?fake=main` (Instagram's kind of list, items in several boxes, late "Sponsorizzato",
+  a "Consigli per te" block with its heading 12 boxes deep, "Sei in pari" and suggested
+  posts after it), jumped back 18 px after every block with 0.4.6.
+  Now anything hidden in a feed, or anywhere on Home, keeps its size (covered); a block in
+  a feed grows up to the feed's item however deep its label is (`feedItemOf()`), so the whole
+  "Consigli per te" goes; a "/reels/" link in the home feed is invisible, the same size.
+- **Sticking.** Since 0.4.1 the filter listened to touches and the wheel on the whole page
+  with listeners that may stop them (`passive: false`), on every page, Home too. The browser
+  then waits for the page's code before every scroll, and with Instagram busy (new posts, a
+  video starting) the feed sticks for a moment. Now those listeners are only there where a
+  reel can be on screen (not on Home, stories, Explore, search, making a post); on reels
+  nothing changes.
+- Lighter while scrolling: a label check reads only the start of a big element's text, not
+  all of it, for every short text in every post; the report's timeline is saved at most once
+  a second (and when the page goes away), not at every line.
+
+Tests: on `?fake=main`, scrolling the whole feed never jumps; the ad, the whole "Consigli
+per te" block and the suggested posts are covered at the size they have without the filter;
+friends' posts and reels and "Sei in pari" stay. On Home there's no touch or wheel listener
+that holds up scrolling; on a reel there is, and back on Home it's gone again. Both fail on
+0.4.6. 68 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

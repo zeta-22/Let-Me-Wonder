@@ -137,6 +137,9 @@
         <div data-fx="spinner-box"><div role="progressbar" data-fx="spinner"><svg aria-label="Caricamento..."></svg></div></div>
       </div></main>`,
     virtual: () => `<main role="main"><div class="feed"><div class="vlist" data-fx="vlist"></div></div></main>`,
+    // Instagram's classic home (&fake=main): the same kind of list, with what the main feed
+    // mixes in (see startMainFeed).
+    main: () => `<main role="main"><div class="feed">${storyTray}<div class="vlist" data-fx="mlist"></div></div></main>`,
     // Making a post or a story: the photo to crop (pinch to zoom it), the file picker, people
     // to tag under "Suggeriti per te", and Instagram's "Condividi" at the bottom right.
     create: () => `
@@ -256,6 +259,102 @@
     update();
   }
 
+  // Instagram's classic home, as a list like the one above (only nearby items in the page,
+  // each item's height measured once, when it first appears). Each item sits in a few
+  // wrappers of its own, and the main feed mixes in, besides friends' posts and reels: ads
+  // whose "Sponsorizzato" is filled in a moment later, a "Consigli per te" carousel that
+  // isn't a post, with its heading deep inside many boxes, as on the real site, and after
+  // "Sei in pari", suggested posts. Lists Instagram's "Vedi tutti" for reels too.
+  function startMainFeed() {
+    const list = view.querySelector('.vlist');
+    const COUNT = 40;
+    const ESTIMATE = 520;
+    const MARGIN = 400;
+    const CAUGHT_UP = 24; // the "Sei in pari" item; suggested posts after it
+    const measured = new Map();
+    const shown = new Map();
+    const heightOf = (i) => measured.get(i) || ESTIMATE;
+    const deep = (levels, inner) => '<div>'.repeat(levels) + inner + '</div>'.repeat(levels);
+    const kind = (i) => {
+      if (i === CAUGHT_UP) return 'caughtUp';
+      if (i > CAUGHT_UP) return 'suggestedPost';
+      return ['post', 'reel', 'ad', 'carousel', 'post'][i % 5];
+    };
+    const article = (i, head, media, foot) => `<article data-fx="m${i}-post">
+        <div class="post-head">${deep(4, `<a href="/user${i}/">user${i}</a>${head}`)}</div>
+        <div style="height:440px;background:#ddd">${media}</div>
+        <div class="foot" style="height:20px">${foot}</div></article>`;
+    const make = (i) => {
+      const k = kind(i);
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.dataset.fx = `m${i}`;
+      el.dataset.kind = k;
+      let inner;
+      if (k === 'post') inner = article(i, '', 'photo', `<a href="/user${i}/p/M${i}/">1 ora fa</a>`);
+      else if (k === 'reel') inner = article(i, '', '<video muted playsinline></video>', '');
+      else if (k === 'ad') inner = article(i, '<span class="late-label">​</span>', 'photo', `<a href="/p/AD${i}/">Scopri di più</a>`);
+      else if (k === 'suggestedPost') inner = article(i, `<div><span>${words.suggested}</span></div><button>Segui</button>`, 'photo', `<a href="/stranger${i}/p/S${i}/">1 g</a>`);
+      else if (k === 'caughtUp') inner = `<div style="height:160px">${deep(3, `<span>${words.caughtUp}</span>`)}<a href="/?variant=past_posts">Vedi i post precedenti</a></div>`;
+      else {
+        inner = `<div style="padding:8px 0">
+          ${deep(12, `<span>${words.carousel}</span>`)}
+          <div style="height:260px;display:flex;gap:8px">${deep(2, `<a href="/sugg${i}/">sugg${i}</a><div role="button">Segui</div>`)}</div>
+          <div><a href="/explore/people/">Mostra tutto</a></div>
+          <div><a href="/reels/">Vedi altri reel</a></div></div>`;
+      }
+      el.innerHTML = deep(3, inner);
+      if (k === 'reel') {
+        setTimeout(() => (el.querySelector('.foot').innerHTML = `<a href="/user${i}/reel/M${i}/">1 ora fa</a>`), 250);
+      }
+      if (k === 'ad') setTimeout(() => (el.querySelector('.late-label').firstChild.data = 'Sponsorizzato'), 250);
+      return el;
+    };
+    function update() {
+      if (!list.isConnected) return window.removeEventListener('scroll', update);
+      const origin = list.getBoundingClientRect().top + window.scrollY;
+      const from = window.scrollY - MARGIN;
+      const to = window.scrollY + window.innerHeight + MARGIN;
+      let first = -1;
+      let last = -1;
+      let y = origin;
+      for (let i = 0; i < COUNT; i++) {
+        if (y + heightOf(i) > from && y < to) {
+          if (first < 0) first = i;
+          last = i;
+        }
+        y += heightOf(i);
+      }
+      let padTop = 0;
+      let padBottom = 0;
+      for (let i = 0; i < COUNT; i++) {
+        if (i < first) padTop += heightOf(i);
+        if (i > last) padBottom += heightOf(i);
+      }
+      for (const [i, el] of shown) {
+        if (i < first || i > last) {
+          el.remove();
+          shown.delete(i);
+        }
+      }
+      list.style.paddingTop = padTop + 'px';
+      list.style.paddingBottom = padBottom + 'px';
+      let next = null;
+      for (let i = last; i >= first; i--) {
+        let el = shown.get(i);
+        if (!el) {
+          el = make(i);
+          shown.set(i, el);
+        }
+        if (el.parentNode !== list || el.nextSibling !== next) list.insertBefore(el, next);
+        if (!measured.has(i)) measured.set(i, el.offsetHeight);
+        next = el;
+      }
+    }
+    window.addEventListener('scroll', update, { passive: true });
+    update();
+  }
+
   const suggestedPost = (n) =>
     post(`sugg-${n}`, `stranger_${n}`, `/stranger_${n}/p/S${n}/`, `<div><span>${words.suggested}</span></div><button>Segui</button>`);
   const batches = [
@@ -295,6 +394,7 @@
     let m;
     if (path === '/' && params.get('fake') === 'endless') return views.endless();
     if (path === '/' && params.get('fake') === 'virtual') return views.virtual();
+    if (path === '/' && params.get('fake') === 'main') return views.main();
     if (path === '/') return views.home();
     if (path === '/notifications/') return views.notifications();
     if (/^\/(stories\/)?create\//.test(path)) return views.create();
@@ -332,7 +432,8 @@
   function render() {
     view.innerHTML = viewFor(location.pathname);
     if (view.querySelector('[data-fx="spinner-box"]')) startEndlessLoader();
-    if (view.querySelector('.vlist')) startVirtualFeed();
+    if (view.querySelector('[data-fx="vlist"]')) startVirtualFeed();
+    if (view.querySelector('[data-fx="mlist"]')) startMainFeed();
     if (view.querySelector('[data-fx="reel-list"]')) startReelFeed(view.querySelector('[data-fx="reel-list"]'));
     if (view.querySelector('[data-fx="reel-post-video"]')) {
       const id = view.querySelector('[data-fx="reel-article"]').dataset.id;

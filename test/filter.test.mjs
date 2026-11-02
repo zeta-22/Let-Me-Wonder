@@ -242,14 +242,14 @@ test('endless feed: hidden posts keep their size, so Instagram loads more as you
   await expectVisible(page, ['sugg-1', 'sugg-5', 'sugg-9'], false);
 });
 
-// Scrolls down like a finger, step by step, and lists every time the post at the top of the
-// screen didn't move by exactly the step: the feed jumped.
-async function scrollAndFindJumps(page, steps, step = 120) {
+// Scrolls down like a finger, step by step, and lists every time the post (or `item`) at the
+// top of the screen didn't move by exactly the step: the feed jumped.
+async function scrollAndFindJumps(page, steps, step = 120, item = 'article') {
   return page.evaluate(
-    async ([steps, step]) => {
+    async ([steps, step, item]) => {
       const jumps = [];
       const topPost = () => {
-        for (const a of document.querySelectorAll('article')) {
+        for (const a of document.querySelectorAll(item)) {
           const r = a.getBoundingClientRect();
           if (r.bottom > 0 && r.height > 1) return [a, r.top];
         }
@@ -268,7 +268,7 @@ async function scrollAndFindJumps(page, steps, step = 120) {
       }
       return jumps;
     },
-    [steps, step],
+    [steps, step, item],
   );
 }
 
@@ -283,6 +283,72 @@ test('in a feed that keeps only nearby posts (like Instagram’s), scrolling pas
   );
   assert.ok(reelsSeen > 0, 'reels further down are in the page too');
   await expectVisible(page, [await page.evaluate(() => document.querySelector('article:has(a[href*="/reel/"])').dataset.fx)], false);
+});
+
+// Scrolls the classic home's list until its item `fx` is in the page, then waits for the
+// labels Instagram fills in a moment later.
+async function scrollToItem(page, fx) {
+  await page.evaluate(async (f) => {
+    for (let k = 0; k < 400 && !document.querySelector(`[data-fx="${f}"]`); k++) {
+      window.scrollBy(0, 200);
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    document.querySelector(`[data-fx="${f}"]`).scrollIntoView({ block: 'center' });
+  }, fx);
+  await page.waitForTimeout(400);
+}
+
+test('Instagram’s classic home: what’s hidden keeps its size however deep it sits, so the feed never jumps back', async () => {
+  // 0.4.6 hid part of a "Consigli per te" block (its heading, deep inside many boxes) and a
+  // "/reels/" link in it, after Instagram had measured the block: the feed jumped back after
+  // every such block, and the posts you'd just seen came back.
+  const page = await open(browser, '/?fake=main&hl=it');
+  await page.waitForTimeout(400);
+  assert.deepEqual(await scrollAndFindJumps(page, 170, 120, '.item'), [], 'the feed stays under your finger');
+
+  const fresh = await open(browser, '/?fake=main&hl=it');
+  const plain = await open(browser, '/?fake=main&hl=it', { settings: ALL_OFF });
+  await scrollToItem(fresh, 'm3');
+  await scrollToItem(plain, 'm3');
+  await expectVisible(fresh, ['m1-post', 'm4-post'], true); // a friend's reel and post
+  await expectVisible(fresh, ['m2-post', 'm3'], false); // an ad, the whole "Consigli per te" block
+  for (const fx of ['m2', 'm3']) assert.equal(await height(fresh, fx), await height(plain, fx), `${fx} keeps its size`);
+  await scrollToItem(fresh, 'm25');
+  await scrollToItem(plain, 'm25');
+  await expectVisible(fresh, ['m24'], true); // "Sei in pari"
+  await expectVisible(fresh, ['m23', 'm25-post', 'm26-post'], false); // a "Consigli per te" block, suggested posts
+  for (const fx of ['m23', 'm25']) assert.equal(await height(fresh, fx), await height(plain, fx), `${fx} keeps its size`);
+  assert.deepEqual(fresh.errors, []);
+});
+
+// The filter's listeners that a browser waits for before it scrolls (touches, the wheel).
+async function scrollBlockers(page) {
+  const cdp = await page.context().newCDPSession(page);
+  const found = [];
+  for (const expression of ['window', 'document']) {
+    const { result } = await cdp.send('Runtime.evaluate', { expression });
+    const { listeners } = await cdp.send('DOMDebugger.getEventListeners', { objectId: result.objectId });
+    for (const l of listeners) if (['touchstart', 'touchmove', 'wheel', 'mousewheel'].includes(l.type) && !l.passive) found.push(l.type);
+  }
+  return found.sort();
+}
+
+test('Home scrolls without waiting on the filter: it listens to touches and the wheel only where a reel can be', async () => {
+  const page = await open(browser, '/');
+  assert.deepEqual(await scrollBlockers(page), [], 'nothing holds up scrolling on Home');
+  await page.evaluate(() => window.fake.navigate('/reel/DM1/'));
+  await page.waitForTimeout(100);
+  assert.deepEqual(await scrollBlockers(page), ['touchmove', 'touchstart', 'wheel'], 'on a reel, swiping is stopped');
+  await page.evaluate(() => history.back());
+  await page.waitForTimeout(400);
+  assert.equal(await path(page), '/');
+  assert.deepEqual(await scrollBlockers(page), [], 'back on Home, nothing again');
+  await page.evaluate(() => (document.body.style.paddingBottom = '3000px'));
+  await fingerSwipe(page, 600, 150);
+  assert.ok((await page.evaluate(() => window.scrollY)) > 100, 'Home scrolls');
+
+  const off = await open(browser, '/reel/DM1/?fake=reelfeed', { settings: { reelSwipe: false } });
+  assert.deepEqual(await scrollBlockers(off), [], 'with the switch off, nowhere');
 });
 
 test('endless feed on a slow connection: the filter never makes Instagram load twice, so no post shows up twice', async () => {

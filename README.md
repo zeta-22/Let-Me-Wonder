@@ -62,8 +62,13 @@ the moment it starts loading, and works in five layers:
    measured heights. So a hidden post keeps its exact size: it is *covered*
    (everything in it invisible and untappable, a small grey label such as
    "Reel hidden" on it) instead of shrunk. Shrinking it made the whole feed jump
-   back by a post as you scrolled past. With the layout unchanged, Instagram's
-   scrolling and its loading of more posts work as if the filter weren't there.
+   back by a post as you scrolled past. The same goes for anything hidden in a
+   feed (a "Consigli per te" block between posts, or a part of one, however deep
+   in Instagram's boxes its label sits) and for anything hidden on Home. With the
+   layout unchanged, Instagram's scrolling and its loading of more posts work as
+   if the filter weren't there. And on Home (and the other pages where swiping is
+   free) the filter doesn't listen to touches or the wheel at all, so the browser
+   never waits for it, or for a busy Instagram, before it scrolls.
    A covered post's video is paused, and posts stay covered when you open a
    story or a post from the feed. A test switch, **Small boxes for hidden
    posts** (off by default), shrinks them to a small box and asks Instagram to

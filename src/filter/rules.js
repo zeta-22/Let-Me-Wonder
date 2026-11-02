@@ -4,7 +4,7 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.11.02f';
+export const RULES_VERSION = '2026.11.02g';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
@@ -71,7 +71,9 @@ export const REEL_SWIPE = { toggle: 'reelSwipe', path: '^/(?:[^/]+/)?reels?/([^/
 // being measured makes the whole feed jump back. `invisible` keeps the size too, for
 // small things that can sit inside a feed (just invisible, and can't be tapped).
 export const CSS_RULES = [
-  { toggle: 'reelsTab', css: ['a[href$="/reels/"]'] }, // Reels tab, also on profiles
+  { toggle: 'reelsTab', css: ['a[href$="/reels/"]:not(html[data-lmw-page="home"] main a)'] }, // Reels tab, also on profiles
+  // A link to the reels inside the home feed ("more reels" under a block): it keeps its size.
+  { toggle: 'reelsTab', page: 'home', invisible: true, css: ['main a[href$="/reels/"]'] },
   {
     toggle: 'feedReels',
     page: 'home',

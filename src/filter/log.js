@@ -17,6 +17,7 @@ function loadPrevious() {
 }
 const JUMP_PX = 400; // a scroll or page-height change this big in one step is noted
 const LIST_PX = 100; // so is a change this big in the feed list's padding
+const SAVE_MS = 1000;
 
 const signed = (n) => (n > 0 ? '+' : '') + n;
 
@@ -29,6 +30,7 @@ export function createLog() {
   let lastHeight = 0;
   let lastPadding = null;
   let fingers = 0;
+  let saveTimer = 0;
 
   function add(text) {
     const s = ((Date.now() - start) / 1000).toFixed(1);
@@ -37,7 +39,15 @@ export function createLog() {
     save();
   }
 
+  // Kept on the phone at most once a second (and when the page goes away or to the
+  // background), not at every line: scrolling the feed adds several lines a second.
   function save() {
+    if (!saveTimer) saveTimer = setTimeout(saveNow, SAVE_MS);
+  }
+
+  function saveNow() {
+    clearTimeout(saveTimer);
+    saveTimer = 0;
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({ start, lines, notes }));
     } catch (e) {
@@ -94,7 +104,11 @@ export function createLog() {
   window.addEventListener('touchstart', (e) => (fingers = e.touches.length), passive);
   window.addEventListener('touchend', (e) => (fingers = e.touches.length), passive);
   window.addEventListener('touchcancel', () => (fingers = 0), passive);
-  document.addEventListener('visibilitychange', () => add(document.hidden ? 'app in the background' : 'app back on screen'));
+  document.addEventListener('visibilitychange', () => {
+    add(document.hidden ? 'app in the background' : 'app back on screen');
+    if (document.hidden) saveNow();
+  });
+  window.addEventListener('pagehide', saveNow);
 
   return { add, note, checkFeed, before, notes: allNotes, lines: () => lines.slice() };
 }
