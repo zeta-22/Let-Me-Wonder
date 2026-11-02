@@ -818,6 +818,11 @@ up has no shield; the settings button works over the shield. `npm run smoke`, on
 Instagram's real reel viewer: no swipe moves on, the shield is up, a tap pauses the reel.
 65 pass.
 
+Published on Android (EAS Update, channel `preview`, update group `1e284e5d`), with the
+Expo token from the first chat, as you asked (kept in the session's scratch folder, never
+in the repo). The app installs it when it's opened (0.4.4's rule). iPhone: when merged to
+`main`.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.
