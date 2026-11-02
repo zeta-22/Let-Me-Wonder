@@ -148,13 +148,16 @@
       </div></main>`,
     // A reel opened from a DM, as Instagram can show it once its viewer has loaded: a
     // full-screen list you swipe (scroll-snap) on to other reels, and the address stays put.
+    // Swiping moves it two ways: the browser's own scrolling, and the viewer's code (a
+    // finger lifted 60 px higher than it went down, by touch or by pointer events).
     reelfeed: (id) => `
       <main role="main"><div data-fx="reel-list" style="height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory">
         ${[id, 'NEXT1', 'NEXT2']
           .map(
-            (r, i) => `<div data-fx="reel-item-${i}" style="height:100vh;scroll-snap-align:start">
+            (r, i) => `<div data-fx="reel-item-${i}" style="height:100vh;scroll-snap-align:start;position:relative">
               <video muted playsinline data-fx="reel-video-${i}" style="display:block;width:100%;height:90vh;background:#222"></video>
-              <a href="/friend_${i}/reel/${r}/">reel ${r}</a></div>`,
+              <a href="/friend_${i}/reel/${r}/">reel ${r}</a>
+              <button data-fx="reel-comments-${i}" style="position:absolute;right:8px;bottom:12vh">Commenti</button></div>`,
           )
           .join('')}
       </div></main>`,
@@ -310,6 +313,7 @@
     view.innerHTML = viewFor(location.pathname);
     if (view.querySelector('[data-fx="spinner-box"]')) startEndlessLoader();
     if (view.querySelector('.vlist')) startVirtualFeed();
+    if (view.querySelector('[data-fx="reel-list"]')) startReelFeed();
     if (location.pathname === '/notifications/') {
       // The suggestions list arrives a moment after its heading.
       setTimeout(() => {
@@ -335,6 +339,38 @@
         if (label) label.firstChild.data = 'Sponsored';
       }, 60);
     }
+  }
+
+  function startReelFeed() {
+    const list = view.querySelector('[data-fx="reel-list"]');
+    window.fakeTaps = 0;
+    window.fakeCodeSwipes = 0;
+    let down = null;
+    const next = () => {
+      window.fakeCodeSwipes++;
+      list.scrollBy(0, window.innerHeight);
+    };
+    list.addEventListener('touchstart', (e) => (down = e.touches[0].clientY), { passive: true });
+    list.addEventListener('touchend', (e) => {
+      if (down !== null && down - e.changedTouches[0].clientY > 60) next();
+      down = null;
+    });
+    let pointerDown = null;
+    list.addEventListener('pointerdown', (e) => (pointerDown = e.clientY));
+    list.addEventListener('pointerup', (e) => {
+      if (pointerDown !== null && pointerDown - e.clientY > 60) next();
+      pointerDown = null;
+    });
+    list.addEventListener('click', (e) => {
+      if (e.target.tagName === 'VIDEO') window.fakeTaps++;
+      if (!e.target.dataset.fx || !e.target.dataset.fx.startsWith('reel-comments')) return;
+      // Comments open in a sheet over the reel, where you scroll the comments.
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        `<div role="dialog" data-fx="comments-sheet" style="position:fixed;left:0;right:0;bottom:0;height:60vh;overflow-y:scroll;background:#fff">
+          ${Array.from({ length: 30 }, (_, i) => `<p style="height:60px">comment ${i}</p>`).join('')}</div>`,
+      );
+    });
   }
 
   function navigate(path) {

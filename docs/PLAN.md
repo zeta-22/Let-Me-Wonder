@@ -661,6 +661,35 @@ your reel and it stays open; your reel drawn again isn't blocked; with "Swiping 
 next reel" off, swiping works. Version 0.4.0, not 0.3.10, so no update check can read it
 as older than 0.3.9. 50 pass.
 
+### Stage 3, round 12: the swipe itself is stopped on a reel's page (2026-11-02)
+What you said (on 0.4.0): no change; after about 3 seconds a swipe still shows the next
+reel. Make it hold in any situation, even after 2 minutes.
+
+Why 0.4.0 wasn't enough: it noticed another reel only *after* it was on screen (a check
+every 300 ms), and only when the next reel came in another video element; if Instagram
+reuses one player, or the check came late, you saw the next reel. In headless Chrome a
+real finger swipe (touch events through CDP) on the fake reel viewer moved to the next
+reel with 0.4.0, and the new test fails on it exactly so.
+
+Fix (0.4.1): on a reel's page (`reel`), the filter stops the swipe gesture itself.
+- A finger moving up or down: every touchmove's default is prevented (the page never
+  scrolls), and once the move is vertical, the touch and pointer events of that gesture
+  never reach the page (`stopImmediatePropagation` in the capture phase on `window`), so
+  Instagram's own swipe code doesn't see them either. Two fingers don't scroll there.
+- The mouse wheel and the up/down/page keys (and j/k) do nothing there either.
+- Free to move: taps (play, pause, sound, like, double tap), the comment box, and any
+  sheet over the reel (`[role="dialog"]` that doesn't hold the reel's video: comments,
+  share), which scrolls as usual.
+- It holds for as long as you're on the reel; switched off with "Swiping to the next
+  reel".
+- The 0.4.0 check stays as a backstop, now also when the same player shows another reel,
+  and right on scroll as well as every 300 ms. The reel page's anonymous outline is kept
+  for the next report, and the timeline notes "a swipe was stopped".
+
+Tests (real finger swipes): on the fake reel viewer after 3 s and again later, neither
+the list nor the viewer's own code moves; a tap still reaches the reel; the comments sheet
+scrolls; Home scrolls as usual; with the switch off, the reel list scrolls. 52 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

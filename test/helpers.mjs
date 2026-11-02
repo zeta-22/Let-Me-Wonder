@@ -115,6 +115,17 @@ export const path = (page) => page.evaluate(() => location.pathname);
 
 export const viewportTag = (page) => page.evaluate(() => document.querySelector('meta[name="viewport"]').getAttribute('content'));
 
+// Swipes a finger from (x, fromY) to (x, toY), like on a phone (real touch events).
+export async function fingerSwipe(page, fromY, toY, x = 180) {
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  await touch('touchStart', fromY);
+  const step = fromY > toY ? -30 : 30;
+  for (let y = fromY + step; step < 0 ? y >= toY : y <= toY; y += step) await touch('touchMove', y);
+  await touch('touchEnd');
+  await page.waitForTimeout(800);
+}
+
 // Pinches with two fingers (as the browser's own pinch gesture) and returns the zoom after it.
 export async function pinch(page) {
   const cdp = await page.context().newCDPSession(page);
