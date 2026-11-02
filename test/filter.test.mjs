@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   launch, open, visible, tap, path, search, blockedShown, blockedMessage, tapGoBack,
   gearShown, panelShown, tapGear, flipSwitch, switchesLocked, lockMessage, enterCode, closePanel, TEST_CODE,
-  viewportTag, pinch, INSTAGRAM_VIEWPORT, fingerSwipe,
+  viewportTag, pinch, INSTAGRAM_VIEWPORT, fingerSwipe, fingerHold, shieldShown, shieldButtonAt, gearAt,
 } from './helpers.mjs';
 
 let browser;
@@ -448,22 +448,75 @@ test('on a reel you opened, a finger swipe never moves on: not the page, not Ins
   const page = await open(browser, '/reel/DM1/?fake=reelfeed');
   const state = () =>
     page.evaluate(() => ({ top: document.querySelector('[data-fx="reel-list"]').scrollTop, code: window.fakeCodeSwipes }));
+  assert.equal(await shieldShown(page), true, 'the shield is over the reel');
   await page.waitForTimeout(3000); // watching it for a few seconds first
   await fingerSwipe(page, 600, 120);
   assert.deepEqual(await state(), { top: 0, code: 0 }, 'still on the reel you opened');
   await page.waitForTimeout(2000);
   await fingerSwipe(page, 640, 80); // and again, later, a longer one
+  await fingerSwipe(page, 120, 640); // and down
+  assert.deepEqual(await state(), { top: 0, code: 0 });
+  await page.mouse.wheel(0, 800); // the wheel and the keys too
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('j');
+  await page.waitForTimeout(500);
   assert.deepEqual(await state(), { top: 0, code: 0 });
   assert.equal(await blockedShown(page), false, 'nothing moved, so nothing to block');
-  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /reel page: a swipe was stopped/);
+  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /reel: a swipe was stopped, Instagram never saw it/);
   assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /the reel page:\n {2}main role=main/);
+});
 
-  await page.touchscreen.tap(180, 300); // taps still reach the reel (play, pause, like…)
-  assert.equal(await page.evaluate(() => window.fakeTaps), 1);
-  await page.evaluate(() => document.querySelector('[data-fx="reel-comments-0"]').click());
-  await fingerSwipe(page, 600, 350); // the comments sheet over the reel scrolls
-  assert.ok((await page.evaluate(() => document.querySelector('[data-fx="comments-sheet"]').scrollTop)) > 50);
-  assert.deepEqual(await state(), { top: 0, code: 0 });
+test('the shield over a reel: a tap is play/pause, its buttons do sound and close; Instagram gets no tap', async () => {
+  const page = await open(browser, '/direct/t/123/?fake=reelfeed'); // reels open in the swipeable viewer
+  await tap(page, 'dm-reel-link');
+  assert.equal(await path(page), '/reel/DM1/');
+  await page.waitForTimeout(400);
+  assert.equal(await shieldShown(page), true);
+  const video = () => page.evaluate(() => {
+    const v = document.querySelector('[data-fx="reel-video-0"]');
+    return { paused: v.paused, muted: v.muted };
+  });
+  assert.deepEqual(await video(), { paused: true, muted: true });
+  await page.touchscreen.tap(180, 300); // a tap on the reel: play
+  assert.equal((await video()).paused, false);
+  await page.touchscreen.tap(180, 300); // and pause
+  assert.equal((await video()).paused, true);
+  const sound = await shieldButtonAt(page, 'sound');
+  await page.touchscreen.tap(sound.x, sound.y);
+  assert.equal((await video()).muted, false, 'sound on');
+  // Instagram's own buttons under the shield (comments here) get nothing.
+  const comments = await page.evaluate(() => {
+    const r = document.querySelector('[data-fx="reel-comments-0"]').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.touchscreen.tap(comments.x, comments.y);
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => !!document.querySelector('[data-fx="comments-sheet"]')), false);
+  assert.equal(await page.evaluate(() => window.fakeTaps), 0, 'Instagram never got a tap');
+
+  // Close: back to the chat, where everything works as usual.
+  const close = await shieldButtonAt(page, 'close');
+  await page.touchscreen.tap(close.x, close.y);
+  await page.waitForTimeout(400);
+  assert.equal(await path(page), '/direct/t/123/');
+  assert.equal(await shieldShown(page), false);
+  await page.evaluate(() => (document.body.style.paddingBottom = '3000px'));
+  await fingerSwipe(page, 600, 150);
+  assert.ok((await page.evaluate(() => window.scrollY)) > 100, 'the chat scrolls');
+  await page.focus('[data-fx="composer"]');
+  await page.keyboard.type('ok j k');
+  assert.equal(await page.evaluate(() => document.querySelector('[data-fx="composer"]').value), 'ok j k', 'typing in the chat works');
+});
+
+test('the settings button stays above the shield, and its panel works', async () => {
+  const page = await open(browser, '/reel/DM1/?fake=reelfeed');
+  assert.equal(await shieldShown(page), true);
+  assert.equal(await gearShown(page), true);
+  const gear = await gearAt(page);
+  await page.touchscreen.tap(gear.x, gear.y);
+  assert.equal(await panelShown(page), true);
+  await enterCode(page, TEST_CODE);
+  assert.match(await lockMessage(page), /Unlocked/);
 });
 
 for (const [after, address] of [['direct', '/direct/t/123/'], ['post', '/p/DM1/']]) {
@@ -481,14 +534,25 @@ for (const [after, address] of [['direct', '/direct/t/123/'], ['post', '/p/DM1/'
   });
 }
 
-test('a DM chat without a reel on screen scrolls as usual', async () => {
+test('a DM chat without a reel on screen scrolls as usual, and typing works with the keyboard up', async () => {
   const page = await open(browser, '/direct/t/123/');
   await page.evaluate(() => (document.body.style.paddingBottom = '3000px'));
   await fingerSwipe(page, 600, 150);
   assert.ok((await page.evaluate(() => window.scrollY)) > 100);
+  // A video sent in the chat, the keyboard up (a shorter screen): no shield, the text box stays.
+  await page.evaluate(() => document.querySelector('[data-fx="dm-video"]').scrollIntoView({ block: 'start' }));
+  await page.focus('[data-fx="composer"]');
+  await page.setViewportSize({ width: 390, height: 380 });
+  await page.waitForTimeout(500);
+  await page.focus('[data-fx="composer"]');
+  await page.keyboard.type('see you');
+  await page.waitForTimeout(300);
+  assert.equal(await shieldShown(page), false);
+  assert.equal(await page.evaluate(() => document.activeElement.dataset.fx), 'composer');
+  assert.equal(await page.evaluate(() => document.querySelector('[data-fx="composer"]').value), 'see you');
 });
 
-test('on a reel, a swipe doesn’t open the reply box (no keyboard), and with the keyboard open it still doesn’t move on', async () => {
+test('on a reel, no swipe or long press opens the reply box (no keyboard); a text box Instagram opens itself is closed', async () => {
   const page = await open(browser, '/reel/DM1/?fake=reelfeed');
   const state = () =>
     page.evaluate(() => ({
@@ -498,22 +562,45 @@ test('on a reel, a swipe doesn’t open the reply box (no keyboard), and with th
     }));
   await page.waitForTimeout(2000);
   await fingerSwipe(page, 600, 120);
+  await fingerSwipe(page, 600, 590); // a few pixels up
+  await fingerHold(page, 400, 900); // a finger held still
   assert.deepEqual(await state(), { top: 0, code: 0, reply: false }, 'no next reel, no reply box');
-  await page.waitForTimeout(800);
-  assert.equal(await state().then((s) => s.reply), false, 'nothing left half-started');
 
-  // The keyboard open (the reply box focused, the screen shorter): swiping on the reel still doesn't move on.
+  // Instagram opening a text box by itself (the keyboard would come up): closed at once.
   await page.evaluate(() => {
     document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;left:0;right:0;bottom:0"><textarea data-fx="typing"></textarea></div>');
     document.querySelector('[data-fx="typing"]').focus();
   });
+  assert.equal(await page.evaluate(() => document.activeElement.tagName), 'BODY', 'no text box open over the reel');
+  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /reel: Instagram opened a text box, closed it \(no keyboard\)/);
+
+  // A shorter screen (as with the keyboard up): swiping still doesn't move on.
   await page.setViewportSize({ width: 390, height: 380 });
   await page.waitForTimeout(400);
   await fingerSwipe(page, 300, 60);
   const after = await state();
   assert.deepEqual([after.top, after.code], [0, 0], 'still on the reel you opened');
-  await page.keyboard.type('ok j k');
-  assert.equal(await page.evaluate(() => document.querySelector('[data-fx="typing"]').value), 'ok j k', 'typing works, spaces too');
+});
+
+test('Instagram’s full viewer opening over the reel a moment later: swiping still doesn’t exist, no keyboard', async () => {
+  // As 0.4.4 let through: the reel's page first, then Instagram's viewer over it, in a dialog.
+  const page = await open(browser, '/reel/DM1/?fake=reelpost');
+  const state = () =>
+    page.evaluate(() => {
+      const list = document.querySelector('[data-fx="reel-viewer"] [data-fx="reel-list"]');
+      return { viewer: !!list, top: list ? list.scrollTop : 0, code: window.fakeCodeSwipes || 0, reply: !!window.fakeReplyOpened };
+    });
+  await fingerSwipe(page, 600, 120);
+  await page.waitForTimeout(2500); // the viewer opens over the reel
+  assert.equal((await state()).viewer, true);
+  await fingerSwipe(page, 600, 120);
+  await page.waitForTimeout(5000);
+  await fingerSwipe(page, 640, 80);
+  await fingerHold(page, 400, 900);
+  assert.deepEqual(await state(), { viewer: true, top: 0, code: 0, reply: false }, 'no next reel, no reply box');
+  assert.equal(await page.evaluate(() => document.activeElement.tagName), 'BODY');
+  assert.equal(await blockedShown(page), false);
+  assert.equal(await shieldShown(page), true);
 });
 
 test('swipes elsewhere are left alone: Home scrolls, and with the switch off a reel page does too', async () => {
@@ -523,6 +610,7 @@ test('swipes elsewhere are left alone: Home scrolls, and with the switch off a r
   assert.ok((await home.evaluate(() => window.scrollY)) > 100, 'Home scrolls');
 
   const off = await open(browser, '/reel/DM1/?fake=reelfeed', { settings: { reelSwipe: false } });
+  assert.equal(await shieldShown(off), false, 'no shield with the switch off');
   await fingerSwipe(off, 600, 120);
   assert.ok((await off.evaluate(() => document.querySelector('[data-fx="reel-list"]').scrollTop)) > 100);
 });

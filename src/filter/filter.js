@@ -114,6 +114,7 @@ function start() {
 
   let page = pageOf(location.pathname);
   let lastPath = null; // last path checked
+  let pathSince = Date.now(); // when the address last changed
   const arrivedFrom = sessionTake(FROM_PATH_KEY); // set when the filter itself sent us here
   let allowedPath = arrivedFrom; // last path allowed, to spot reel-to-reel moves
   let navCount = 0; // address changes since the page loaded
@@ -185,6 +186,7 @@ function start() {
     // In the app the button is the only way to its settings, so it can't be hidden there.
     ui.setGearVisible((host === 'app' || settings.showGear) && !NO_GEAR_PAGES.includes(page));
     ui.setGearPlace(page === 'stories' ? 'side' : null);
+    updateShield(); // a reel's page, or the Blocked screen: no shield on it
   }
 
   // --- pages and navigation ---------------------------------------------------
@@ -216,6 +218,7 @@ function start() {
     }
     if (lastPath !== null) navCount++;
     lastPath = path;
+    pathSince = Date.now();
     const next = pageOf(path);
     if (next !== page) keepCovered(page);
     page = next;
@@ -712,33 +715,50 @@ function start() {
   }
 
   // --- one reel at a time ------------------------------------------------------------
-  // On a reel's own page, once Instagram's viewer has loaded, swiping can scroll on to other
-  // reels without the address changing, so the address check misses it. The filter
-  // remembers the full-screen video you opened and, when another one takes its place (the
-  // page scrolled to it, yours left the screen, or it belongs to another reel), pauses it
-  // and shows the Blocked screen; Go back scrolls back to your reel. Instagram drawing your
+  // While a reel is on screen (one sent in DMs, opened from a profile, ...), a clear shield
+  // of the filter's own lies over the whole screen. Every touch lands on it, so Instagram
+  // gets no touch at all there: no swipe, no long press, no wheel, no keys. Nothing of
+  // Instagram's can move on to another reel or open a text box (the keyboard): on a reel,
+  // swiping doesn't exist. And a text box Instagram focuses by itself is closed at once.
+  // The shield has its own buttons: play/pause (a tap anywhere does it too), sound, and
+  // close (back to where you were). The filter's settings button and screens stay above it.
+  // "A reel on screen": a reel's page (/reel/<id>/), or a video at least half the screen
+  // tall and as wide as the screen (90%: a video in a chat is narrower), on any page but
+  // Home, stories, making a post or story,
+  // Explore, search and login. Instagram can show a reel over a chat, open its full viewer
+  // over the reel a moment later, or change the address while the reel stays: what's on
+  // screen decides. The shield stays while the video is there, and for a moment if
+  // Instagram draws it again, as long as the address is the same.
+  // As a backstop, if another reel still takes the place of yours (Instagram's own code),
+  // it's paused and blocked, and Go back scrolls back to your reel. Instagram drawing your
   // reel again isn't a swipe, and a link you tap yourself starts over with what you opened.
   let reelWatch = null; // { video, scroller, top, id, path }: the reel you opened
-  let gesture = null; // the finger(s) on a held reel: { x, y, target, pointerId, free, moved, called }
-  let callingOff = false; // the filter's own cancel events, passing through its listeners
+  let shieldOn = false;
+  let reelSeen = { at: 0, path: null }; // the last time a reel was on screen, and where
+  let shieldPress = null; // a finger (or mouse button) down on the shield: { x, y, moved }
   let swipeLoggedAt = 0;
+  let focusLoggedAt = 0;
   let reelNoted = false;
   const TAP_PX = 10; // a finger moving less than this is a tap
+  const SHIELD_GRACE_MS = 1500;
 
-  // Stopping the swipe itself, while a reel is on screen. Instagram never sees the finger
-  // move, from the first pixel: the page doesn't scroll, and Instagram's own code can't
-  // move on, open the reply box or anything else a swipe does. Once the finger has moved
-  // like a swipe, Instagram is told the gesture was called off (pointercancel and
-  // touchcancel, as the browser does when it handles a gesture itself), so nothing it
-  // started (a long press, a "swipe up to reply") stays half-done; and it never sees the
-  // finger lift. Taps still reach the reel (play, pause, sound, like, double tap, the
-  // comment box); a list that scrolls in a sheet over the reel (comments) scrolls as usual.
-  // "A reel on screen" is a reel's page, any other page with a video filling the screen
-  // (Instagram can change the address a moment after a reel opens), or the reel being
-  // watched, still there with the keyboard open.
-  function holdingReel() {
-    if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page)) return false;
-    return page === 'reel' || !!fullScreenVideo() || !!(reelWatch && reelWatch.video.isConnected);
+  function reelOnScreen() {
+    if (!settings.reelSwipe || blocked || FREE_SWIPE_PAGES.includes(page)) return false;
+    const now = Date.now();
+    if (page === 'reel' || reelVideo()) {
+      // Only a reel still there a moment after the address changed is held through a
+      // redraw: right after going back to a chat, the reel's still in the page until
+      // Instagram draws the chat, and the chat shouldn't wait.
+      if (now - pathSince > 500) reelSeen = { at: now, path: location.pathname };
+      return true;
+    }
+    return shieldOn && reelSeen.path === location.pathname && now - reelSeen.at < SHIELD_GRACE_MS;
+  }
+
+  // A video at least half the screen tall, as wide as the screen, and mostly on screen.
+  function reelVideo() {
+    const video = mainVideo();
+    return video && video.getBoundingClientRect().width >= window.innerWidth * 0.9 ? video : null;
   }
 
   function fullScreenVideo() {
@@ -748,32 +768,125 @@ function start() {
     return r.height >= window.innerHeight * 0.7 && r.width >= window.innerWidth * 0.8 ? video : null;
   }
 
-  // Free to move on a held reel: the filter's own screens, and a list that scrolls in a
-  // sheet opened over the reel (comments, share), not the reel itself.
-  function freeToMove(target) {
-    if (!target || !target.closest) return true;
-    if (target.closest('#lmw-ui')) return true;
-    const sheet = target.closest('[role="dialog"]');
-    if (!sheet) return false;
-    const video = mainVideo() || (reelWatch && reelWatch.video);
-    if (video && sheet.contains(video)) return false;
-    for (let n = target; n && n !== sheet.parentElement; n = n.parentElement) {
-      if (/(auto|scroll)/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight + 4) return true;
+  // Puts the shield up or takes it down, as the screen says. Returns whether it's up.
+  function updateShield() {
+    const on = reelOnScreen();
+    if (on !== shieldOn) {
+      shieldOn = on;
+      shieldPress = null;
+      ui.setShield(on);
+      log.add(on ? `reel on ${pageLabel()}: shield up, Instagram gets no touches` : 'reel: shield down');
+      if (on && closeKeyboard()) log.add('reel: a text box was open, closed it');
     }
-    return false;
+    if (on) syncShield();
+    return on;
   }
 
-  function startGesture(x, y, target, pointerId, fingers) {
-    if (gesture && gesture.target === target && Date.now() - gesture.at < 400 && !gesture.ended) {
-      if (fingers > 1) gesture.moved = TAP_PX + 1; // two fingers: not a tap
-      if (pointerId != null) gesture.pointerId = pointerId;
-      return; // the same finger, as a pointer and as a touch
-    }
-    gesture = holdingReel()
-      ? { x, y, target, pointerId, at: Date.now(), free: freeToMove(target), moved: fingers > 1 ? TAP_PX + 1 : 0, called: false }
-      : null;
-    if (!gesture) noteFreeSwipe();
+  function editable(node) {
+    return !!node && node.nodeType === 1 && (node.matches('input, textarea, select') || node.isContentEditable);
   }
+
+  // A text box of Instagram's with the keyboard up: closed. The filter's own (the code
+  // box in settings) never: those are inside its shadow root, so never the page's focus.
+  function closeKeyboard() {
+    const focused = document.activeElement;
+    if (!editable(focused) || isOurs(focused)) return false;
+    focused.blur();
+    return true;
+  }
+
+  // The reel's video, for the shield's buttons.
+  function shieldVideo() {
+    return reelVideo() || mainVideo() || (reelWatch && reelWatch.video.isConnected ? reelWatch.video : null);
+  }
+
+  function syncShield() {
+    const video = shieldVideo();
+    ui.setShieldState({ playing: !!video && !video.paused, sound: !!video && !video.muted });
+  }
+
+  function play(video) {
+    try {
+      const p = video.play();
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) {
+      /* the browser said no: it stays paused */
+    }
+  }
+
+  // A tap on the shield: one of its buttons, or anywhere else (play/pause).
+  function onShield(part) {
+    if (!shieldOn) return;
+    if (part === 'close') {
+      log.add('reel: closed with the shield’s button');
+      if (navCount > 0 || arrivedFrom) history.back();
+      else location.assign('/'); // opened directly on the reel: go home
+      return;
+    }
+    const video = shieldVideo();
+    if (!video) return;
+    if (part === 'sound') {
+      video.muted = !video.muted;
+      if (!video.muted && video.paused) play(video);
+    } else if (video.paused) play(video);
+    else video.pause();
+    syncShield();
+  }
+
+  // Every input event, in the capture phase on window, before any of Instagram's code.
+  // While the shield is up, your fingers' events (and the wheel, and keys) never reach
+  // Instagram, whatever they land on; on the shield, they work its buttons. The filter's
+  // own screens (Blocked, settings) and its settings button work as usual. Events made
+  // by code aren't yours: they pass, as everywhere else.
+  function guard(e) {
+    if (!e.isTrusted) return;
+    const starts = e.type === 'pointerdown' || e.type === 'touchstart' || e.type === 'mousedown' || e.type === 'wheel' || e.type === 'keydown';
+    if (starts ? !updateShield() : !shieldOn) {
+      if (e.type === 'pointerdown' && e.pointerType !== 'mouse') noteFreeSwipe();
+      return;
+    }
+    const inner = e.composedPath ? e.composedPath()[0] : e.target;
+    const part = ui.shieldPart(inner);
+    if (!part && isOurs(e.target)) return; // the Blocked screen, settings, the settings button
+    e.stopImmediatePropagation();
+    // On the shield, a tap still makes a click (on the shield, nothing of Instagram's);
+    // everything else's default (scrolling, zooming, focusing, a menu) is prevented.
+    const tapParts = ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup', 'click'];
+    if (e.cancelable && !(part && tapParts.includes(e.type))) e.preventDefault();
+    if (!part) return;
+    const p = shieldPress;
+    if (e.type === 'pointerdown') shieldPress = { x: e.clientX, y: e.clientY, moved: 0 };
+    else if (e.type === 'pointermove' && p) {
+      p.moved = Math.max(p.moved, Math.abs(e.clientX - p.x), Math.abs(e.clientY - p.y));
+      if (p.moved > TAP_PX && Date.now() - swipeLoggedAt > 5000) {
+        swipeLoggedAt = Date.now();
+        log.add('reel: a swipe was stopped, Instagram never saw it');
+      }
+    } else if (e.type === 'pointerup' || e.type === 'pointercancel') shieldPress = null;
+    else if (e.type === 'click') onShield(part);
+  }
+
+  const INPUT_EVENTS = [
+    'pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'touchstart', 'touchmove', 'touchend', 'touchcancel',
+    'mousedown', 'mousemove', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'wheel',
+    'keydown', 'keypress', 'keyup', 'gesturestart', 'gesturechange', 'gestureend', 'selectstart', 'dragstart',
+  ];
+  for (const type of INPUT_EVENTS) window.addEventListener(type, guard, { capture: true, passive: false });
+
+  // Whatever Instagram focuses while a reel is on screen (a reply box, a comment box) is
+  // closed right away, so the keyboard never stays up over a reel.
+  window.addEventListener(
+    'focusin',
+    (e) => {
+      if (!shieldOn || !editable(e.target) || isOurs(e.target)) return;
+      e.target.blur();
+      if (Date.now() - focusLoggedAt > 5000) {
+        focusLoggedAt = Date.now();
+        log.add('reel: Instagram opened a text box, closed it (no keyboard)');
+      }
+    },
+    true,
+  );
 
   // For the report: a swipe left free on a page with a video, and why (how much of the
   // screen the biggest video took), in case a reel viewer isn't recognised.
@@ -793,98 +906,6 @@ function start() {
         `${share(biggest.height, window.innerHeight)}% tall, top at ${share(biggest.top, window.innerHeight)}%`,
     );
   }
-
-  // Tells Instagram the gesture was called off, once: a swipe it never saw move.
-  function callOff() {
-    if (!gesture || gesture.called) return;
-    gesture.called = true;
-    if (Date.now() - swipeLoggedAt > 5000) {
-      swipeLoggedAt = Date.now();
-      log.add('reel page: a swipe was stopped');
-    }
-    const { target, pointerId, x, y } = gesture;
-    callingOff = true;
-    try {
-      if (pointerId != null) {
-        target.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y }));
-      }
-      let touches = [];
-      try {
-        touches = [new Touch({ identifier: 0, target, clientX: x, clientY: y })];
-      } catch (e) {
-        /* no Touch constructor here */
-      }
-      target.dispatchEvent(new TouchEvent('touchcancel', { bubbles: true, changedTouches: touches }));
-    } catch (e) {
-      /* a browser without these events: Instagram just never sees the finger lift */
-    } finally {
-      callingOff = false;
-    }
-  }
-
-  // A move of a held gesture: never reaches Instagram; past a tap, the gesture is called off.
-  function heldMove(e, x, y) {
-    if (!gesture || gesture.free || callingOff) return false;
-    gesture.moved = Math.max(gesture.moved, Math.abs(x - gesture.x), Math.abs(y - gesture.y));
-    if (gesture.moved > TAP_PX) callOff();
-    e.stopImmediatePropagation();
-    return true;
-  }
-
-  const active = { capture: true, passive: false };
-  window.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'mouse' && !callingOff) startGesture(e.clientX, e.clientY, e.target, e.pointerId, 1);
-  }, active);
-  window.addEventListener('touchstart', (e) => {
-    if (!callingOff) startGesture(e.touches[0].clientX, e.touches[0].clientY, e.target, null, e.touches.length);
-  }, active);
-  window.addEventListener('pointermove', (e) => e.pointerType !== 'mouse' && heldMove(e, e.clientX, e.clientY), active);
-  window.addEventListener(
-    'touchmove',
-    (e) => {
-      if (heldMove(e, e.touches[0].clientX, e.touches[0].clientY) && e.cancelable) e.preventDefault(); // no scrolling under the reel
-    },
-    active,
-  );
-  // The end of a swipe never reaches Instagram (it was told the gesture was called off);
-  // the end of a tap does.
-  for (const type of ['pointerup', 'pointercancel', 'touchend', 'touchcancel']) {
-    window.addEventListener(
-      type,
-      (e) => {
-        if (!gesture || gesture.free || callingOff) return;
-        if (gesture.moved > TAP_PX) {
-          callOff();
-          e.stopImmediatePropagation();
-          if (e.cancelable && type === 'touchend') e.preventDefault(); // and no click
-        }
-        if (!type.startsWith('touch') || e.touches.length === 0) gesture.ended = true;
-      },
-      active,
-    );
-  }
-  // The mouse wheel and the arrow keys move on through reels on a computer.
-  window.addEventListener(
-    'wheel',
-    (e) => {
-      if (!holdingReel() || freeToMove(e.target) || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    },
-    active,
-  );
-  window.addEventListener(
-    'keydown',
-    (e) => {
-      const typing = e.target && e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]');
-      if (typing || !holdingReel() || freeToMove(e.target)) return;
-      if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'j', 'k'].includes(e.key)) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      }
-    },
-    active,
-  );
 
   // The video filling most of the screen, if any (at least half the screen tall, mostly in view).
   function mainVideo() {
@@ -938,6 +959,12 @@ function start() {
       return;
     }
     if (blocked || document.hidden) return;
+    // Off a reel's page, only while the shield says a reel is on screen: a video in a chat
+    // you came back to is never taken for another reel.
+    if (!REEL_PAGES.includes(page) && !shieldOn) {
+      reelWatch = null;
+      return;
+    }
     // On a reel's page, the main video; elsewhere (the address changed, a reel over a
     // chat), one filling the screen. When none has been there for a while, the reel closed.
     const video = REEL_PAGES.includes(page) || reelWatch ? mainVideo() : fullScreenVideo();
@@ -1051,6 +1078,7 @@ function start() {
       return result;
     },
     onGear: host === 'app' ? () => notifyHost({ type: 'openSettings' }) : undefined,
+    onShield: (part) => onShield(part),
   });
 
   shownPage = pageLabel();
@@ -1084,6 +1112,7 @@ function start() {
   setInterval(watchFeed, 500);
   setInterval(checkStoryAds, 400); // an ad still showing after a skip, or the next one
   setInterval(watchReel, 300); // another reel taking the place of the one you opened
+  setInterval(updateShield, 200); // a reel coming on screen, or leaving it
   window.addEventListener('scroll', () => !FREE_SWIPE_PAGES.includes(page) && watchReel(), { capture: true, passive: true }); // and right away
   setInterval(fixViewport, 500); // in case Instagram changes its viewport tag without adding nodes
   new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });

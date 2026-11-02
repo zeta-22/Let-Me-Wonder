@@ -41,13 +41,14 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Reels page:** opening `instagram.com/reels/` shows the **Blocked**
       screen, and **Go back** works.
 - [ ] **Profiles:** no Reels tab and no "Suggested for you" row.
-- [ ] **Reel from a friend:** a reel sent to you in DMs plays. Swiping to the
-      next one, or tapping another reel from there, shows the **Blocked**
-      screen; **Go back** returns to the reel. Also after watching it for a
-      while (10 seconds or more), swiping up or down does nothing: you never
-      see the next reel, and the keyboard doesn't open. With the keyboard open
-      (replying), swiping on the reel still does nothing. Tapping the reel
-      (pause, sound, like) and scrolling the comments still work.
+- [ ] **Reel from a friend:** a reel sent to you in DMs plays, with a small dark bar
+      at the bottom: play/pause, sound, close. Swiping up or down does nothing,
+      right away, after 10 seconds and after a minute: you never see the next reel,
+      and the keyboard never opens (nor with a long press). A tap on the reel pauses
+      it, another plays it; the sound button turns the sound on; the close button
+      (or Android's back) takes you back to the chat, where scrolling and typing
+      work as usual. Instagram's own buttons on the reel (like, comments, reply)
+      don't respond there: that's the shield.
 
 ## Should still work
 - [ ] **DMs:** read, reply, send a photo.

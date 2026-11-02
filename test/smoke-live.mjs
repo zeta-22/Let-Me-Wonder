@@ -1,6 +1,7 @@
 // Smoke test on the real instagram.com, logged out. Run with: npm run smoke
 // Checks that the filter starts without errors on Instagram's real page,
-// leaves the login form alone, blocks /reels/ and holds a reel in the real reel viewer. Pages that need a login
+// leaves the login form alone, blocks /reels/ and holds a reel in the real reel viewer (its shield
+// over it, a tap pausing or playing it). Pages that need a login
 // (feed, DMs) can only be checked on your phone.
 
 import { createRequire } from 'node:module';
@@ -105,8 +106,23 @@ async function swipeReels(reelPath, withFilter) {
     await page.waitForTimeout(1500);
     moves.push(await where());
   }
+  // With the filter: the shield is over the viewer, and a finger tap on it pauses or plays the reel.
+  let shield = null;
+  if (withFilter) {
+    const playing = () =>
+      page.evaluate(() => {
+        const v = [...document.querySelectorAll('video')].find((x) => x.getBoundingClientRect().top > -200 && x.getBoundingClientRect().top < 200);
+        return v ? !v.paused : null;
+      });
+    const up = await page.evaluate(() => !document.getElementById('lmw-ui').shadowRoot.querySelector('.shield').hidden);
+    const before = await playing();
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 200, y: 400 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(600);
+    shield = { up, before, after: await playing() };
+  }
   await context.close();
-  return { start, moves, errors };
+  return { start, moves, errors, shield };
 }
 
 const firstReel = reels.landedOn.match(/^\/reels\/[^/]+\/$/) ? reels.landedOn : null;
@@ -122,6 +138,9 @@ if (!plain || plain.start.videos === 0) {
     const held = await swipeReels(firstReel, true);
     console.log(`  with the filter:    ${held.moves.map((m) => m.path).join(' -> ')}`);
     check(moved(held) === 0, 'no swipe moves on to another reel, also 8 seconds later');
+    check(held.shield.up, 'the shield is over the reel viewer');
+    console.log(`  a tap on the shield: playing ${held.shield.before} -> ${held.shield.after}`);
+    check(held.shield.before !== null && held.shield.before !== held.shield.after, 'a tap on the shield pauses or plays the reel');
     check(held.errors.filter((e) => !plain.errors.includes(e)).length === 0, 'no new page errors with the filter');
   }
 }

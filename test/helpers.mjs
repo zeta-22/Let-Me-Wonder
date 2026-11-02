@@ -113,6 +113,13 @@ export const flipSwitch = (page, id) =>
 
 export const path = (page) => page.evaluate(() => location.pathname);
 
+// The clear shield over a reel, and where its buttons are ('play', 'sound', 'close'), to tap them with a finger.
+export const shieldShown = (page) => inUi(page, "return !root.querySelector('.shield').hidden");
+export const shieldButtonAt = (page, part) =>
+  inUi(page, "const r = root.querySelector('[data-part=\"' + arg + '\"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }", part);
+export const gearAt = (page) =>
+  inUi(page, "const r = root.querySelector('.gear').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }");
+
 export const viewportTag = (page) => page.evaluate(() => document.querySelector('meta[name="viewport"]').getAttribute('content'));
 
 // Swipes a finger from (x, fromY) to (x, toY), like on a phone (real touch events).
@@ -124,6 +131,15 @@ export async function fingerSwipe(page, fromY, toY, x = 180) {
   for (let y = fromY + step; step < 0 ? y >= toY : y <= toY; y += step) await touch('touchMove', y);
   await touch('touchEnd');
   await page.waitForTimeout(800);
+}
+
+// Holds a finger still at (x, y) for `ms`, then lifts it (a long press).
+export async function fingerHold(page, y, ms, x = 180) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  await page.waitForTimeout(ms);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(300);
 }
 
 // Pinches with two fingers (as the browser's own pinch gesture) and returns the zoom after it.
