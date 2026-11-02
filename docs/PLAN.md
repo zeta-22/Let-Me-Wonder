@@ -894,6 +894,10 @@ friends' posts and reels and "Sei in pari" stay. On Home there's no touch or whe
 that holds up scrolling; on a reel there is, and back on Home it's gone again. Both fail on
 0.4.6. 68 pass.
 
+Published, as you said: merged to `main` for the iPhone (PR #19), and Android (EAS Update,
+channel `preview`, update group `9eda74e9`), with the Expo token you gave in this chat (kept
+in the session's scratch folder, never in the repo).
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.
