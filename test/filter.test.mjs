@@ -466,6 +466,28 @@ test('on a reel you opened, a finger swipe never moves on: not the page, not Ins
   assert.deepEqual(await state(), { top: 0, code: 0 });
 });
 
+for (const [after, address] of [['direct', '/direct/t/123/'], ['post', '/p/DM1/']]) {
+  test(`on a reel you opened, swiping stays stopped when Instagram changes the address after a moment (${after})`, async () => {
+    const page = await open(browser, `/reel/DM1/?fake=reelfeed&after=${after}`);
+    const state = () =>
+      page.evaluate(() => ({ top: document.querySelector('[data-fx="reel-list"]').scrollTop, code: window.fakeCodeSwipes }));
+    await page.waitForTimeout(2600);
+    assert.equal(await path(page), address, 'the address changed, the reel is still on screen');
+    await fingerSwipe(page, 600, 120);
+    assert.deepEqual(await state(), { top: 0, code: 0 }, 'still on the reel you opened');
+    await page.evaluate(() => document.querySelector('[data-fx="reel-list"]').scrollBy(0, window.innerHeight)); // if it moved anyway
+    await page.waitForTimeout(800);
+    assert.equal(await blockedShown(page), true, 'the backstop still knows your reel');
+  });
+}
+
+test('a DM chat without a reel on screen scrolls as usual', async () => {
+  const page = await open(browser, '/direct/t/123/');
+  await page.evaluate(() => (document.body.style.paddingBottom = '3000px'));
+  await fingerSwipe(page, 600, 150);
+  assert.ok((await page.evaluate(() => window.scrollY)) > 100);
+});
+
 test('swipes elsewhere are left alone: Home scrolls, and with the switch off a reel page does too', async () => {
   const home = await open(browser, '/');
   await home.evaluate(() => (document.body.style.paddingBottom = '3000px'));

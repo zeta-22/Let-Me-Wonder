@@ -690,6 +690,30 @@ Tests (real finger swipes): on the fake reel viewer after 3 s and again later, n
 the list nor the viewer's own code moves; a tap still reaches the reel; the comments sheet
 scrolls; Home scrolls as usual; with the switch off, the reel list scrolls. 52 pass.
 
+### Stage 3, round 13: the reel stays held when the address changes (2026-11-02)
+What you said (on 0.4.1): the same. Right after opening a reel someone sent you, you
+can't swipe down; after a couple of seconds you can.
+
+The cause, in the filter's design: both the swipe stop and the backstop switched on only
+while the address was a reel's (`/reel/...`), and the backstop even forgot your reel when
+the address stopped being one. If Instagram changes the address a moment after the reel
+opens (back to the chat's `/direct/t/...` with the reel still over it, or to `/p/...`),
+the filter thought you had left the reel. The earlier tests always kept the address; with
+the fake changing it after 2 s (to the chat, or to /p/), 0.4.1 let the swipe through.
+
+Fix (0.4.2): what's on screen decides, not the address.
+- The swipe is stopped on a reel's page and on any other page showing a video that fills
+  the screen (at least 70% of its height and 80% of its width), except Home, stories,
+  making a post or story, Explore, search and login, where swiping is free.
+- The backstop keeps your reel when the address changes; off a reel's page it lets go
+  once no full-screen video has been on screen for 1.5 s (the reel was closed).
+- For the report: a swipe left free on a page with a video writes the page kind and how
+  much of the screen the biggest video took, so a reel viewer that isn't recognised shows
+  up in the timeline.
+
+Tests: with the address changing after 2 s (to the chat, to /p/), a finger swipe doesn't
+move on and the backstop still blocks; a chat without a reel on screen scrolls. 55 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

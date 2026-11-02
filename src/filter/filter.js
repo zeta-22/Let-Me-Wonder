@@ -37,6 +37,8 @@ const STORY_MAX_TRIES = 3;
 const STORY_WAY_MS = 3000; // how long your last tap or swipe in stories says which way you're going
 const SWIPE_PX = 50;
 const REEL_PAGES = ['reel', 'post']; // a reel's own page (opened from a DM, a profile, the feed)
+// Where swiping is never stopped: scrolling there is the point, or they have their own swipes.
+const FREE_SWIPE_PAGES = ['home', 'stories', 'create', 'explore', 'search', 'login'];
 const reelRe = new RegExp(REEL_SWIPE.path);
 
 // A covered post keeps its size, so the feed keeps Instagram's own layout. Everything in
@@ -721,13 +723,24 @@ function start() {
   let swipeLoggedAt = 0;
   let reelNoted = false;
 
-  // Stopping the swipe itself, on a reel's page: a finger moving up or down never reaches
-  // the page, so neither the browser's scrolling nor Instagram's own code can move on to
-  // another reel, however long you've been watching. Taps still work (play, pause, sound,
-  // like, comments), and so does anything in a sheet opened over the reel (comments,
+  // Stopping the swipe itself, while a reel is on screen: a finger moving up or down never
+  // reaches the page, so neither the browser's scrolling nor Instagram's own code can move
+  // on to another reel, however long you've been watching. Taps still work (play, pause,
+  // sound, like, comments), and so does anything in a sheet opened over the reel (comments,
   // share), which scrolls as usual. Two fingers don't scroll there either.
+  // "A reel on screen" is a reel's page, or any other page with a video filling the screen:
+  // Instagram can change the address a moment after a reel opens (back to the chat, to
+  // /p/...) while the reel stays, so the address alone isn't enough.
   function holdingReel() {
-    return page === 'reel' && settings.reelSwipe;
+    if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page)) return false;
+    return page === 'reel' || !!fullScreenVideo();
+  }
+
+  function fullScreenVideo() {
+    const video = mainVideo();
+    if (!video) return null;
+    const r = video.getBoundingClientRect();
+    return r.height >= window.innerHeight * 0.7 && r.width >= window.innerWidth * 0.8 ? video : null;
   }
 
   function freeToMove(target) {
@@ -740,11 +753,31 @@ function start() {
 
   function startGesture(x, y, target, fingers) {
     gesture = holdingReel() ? { x, y, free: freeToMove(target), vertical: fingers > 1 } : null;
+    if (!gesture) noteFreeSwipe();
+  }
+
+  // For the report: a swipe left free on a page with a video, and why (how much of the
+  // screen the biggest video took), in case a reel viewer isn't recognised.
+  let freeSwipeLoggedAt = 0;
+  function noteFreeSwipe() {
+    if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page) || Date.now() - freeSwipeLoggedAt < 5000) return;
+    let biggest = null;
+    for (const video of document.querySelectorAll('video')) {
+      const r = video.getBoundingClientRect();
+      if (!biggest || r.height * r.width > biggest.height * biggest.width) biggest = r;
+    }
+    if (!biggest) return;
+    freeSwipeLoggedAt = Date.now();
+    const share = (a, b) => Math.round((a / b) * 100);
+    log.add(
+      `swipe left free on ${pageLabel()}: biggest video ${share(biggest.width, window.innerWidth)}% wide, ` +
+        `${share(biggest.height, window.innerHeight)}% tall, top at ${share(biggest.top, window.innerHeight)}%`,
+    );
   }
 
   // True when this move is part of a swipe up or down, which the filter keeps from the page.
   function swipeMove(x, y) {
-    if (!gesture || gesture.free || !holdingReel()) return false;
+    if (!gesture || gesture.free) return false;
     const dx = Math.abs(x - gesture.x);
     const dy = Math.abs(y - gesture.y);
     if (!gesture.vertical && dy > 8 && dy >= dx) {
@@ -770,8 +803,8 @@ function start() {
   window.addEventListener(
     'touchmove',
     (e) => {
-      if (!gesture || gesture.free || !holdingReel()) return;
-      if (e.cancelable) e.preventDefault(); // the reel page itself never scrolls
+      if (!gesture || gesture.free) return;
+      if (e.cancelable) e.preventDefault(); // the page under the reel never scrolls
       if (swipeMove(e.touches[0].clientX, e.touches[0].clientY)) e.stopImmediatePropagation();
     },
     active,
@@ -857,15 +890,25 @@ function start() {
   }
 
   function watchReel() {
-    if (!REEL_PAGES.includes(page)) reelWatch = null;
-    if (!reelWatch && (!REEL_PAGES.includes(page) || !settings.reelSwipe)) return;
-    if (blocked || document.hidden || !settings.reelSwipe) return;
-    const video = mainVideo();
-    if (!video) return;
+    if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page)) {
+      reelWatch = null;
+      return;
+    }
+    if (blocked || document.hidden) return;
+    // On a reel's page, the main video; elsewhere (the address changed, a reel over a
+    // chat), one filling the screen. When none has been there for a while, the reel closed.
+    const video = REEL_PAGES.includes(page) ? mainVideo() : fullScreenVideo();
+    if (!video) {
+      if (reelWatch && !REEL_PAGES.includes(page) && Date.now() - reelWatch.seen > 1500) reelWatch = null;
+      return;
+    }
+    if (reelWatch) reelWatch.seen = Date.now();
     if (!reelWatch) {
       const scroller = scrollerOf(video);
       const fromPath = reelRe.exec(location.pathname);
-      reelWatch = { video, scroller, top: scroller.scrollTop, id: reelIdNear(video) || (fromPath && fromPath[1]), path: location.pathname };
+      reelWatch = {
+        video, scroller, top: scroller.scrollTop, id: reelIdNear(video) || (fromPath && fromPath[1]), path: location.pathname, seen: Date.now(),
+      };
       log.add('reel page: watching the reel you opened');
       if (!reelNoted) {
         reelNoted = true;
@@ -998,7 +1041,7 @@ function start() {
   setInterval(watchFeed, 500);
   setInterval(checkStoryAds, 400); // an ad still showing after a skip, or the next one
   setInterval(watchReel, 300); // another reel taking the place of the one you opened
-  window.addEventListener('scroll', () => REEL_PAGES.includes(page) && watchReel(), { capture: true, passive: true }); // and right away
+  window.addEventListener('scroll', () => !FREE_SWIPE_PAGES.includes(page) && watchReel(), { capture: true, passive: true }); // and right away
   setInterval(fixViewport, 500); // in case Instagram changes its viewport tag without adding nodes
   new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
 

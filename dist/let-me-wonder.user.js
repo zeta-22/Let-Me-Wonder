@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.4.1
+// @version      0.4.2
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.11.02b";
+  var RULES_VERSION = "2026.11.02c";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
@@ -729,7 +729,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.4.1" : "dev";
+  var VERSION = true ? "0.4.2" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -743,6 +743,7 @@
   var STORY_WAY_MS = 3e3;
   var SWIPE_PX = 50;
   var REEL_PAGES = ["reel", "post"];
+  var FREE_SWIPE_PAGES = ["home", "stories", "create", "explore", "search", "login"];
   var reelRe2 = new RegExp(REEL_SWIPE.path);
   function coverCss(scope, target, label) {
     const sel = `${scope} ${target}`;
@@ -1284,7 +1285,14 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     let swipeLoggedAt = 0;
     let reelNoted = false;
     function holdingReel() {
-      return page === "reel" && settings.reelSwipe;
+      if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page)) return false;
+      return page === "reel" || !!fullScreenVideo();
+    }
+    function fullScreenVideo() {
+      const video = mainVideo();
+      if (!video) return null;
+      const r = video.getBoundingClientRect();
+      return r.height >= window.innerHeight * 0.7 && r.width >= window.innerWidth * 0.8 ? video : null;
     }
     function freeToMove(target) {
       if (!target || !target.closest) return true;
@@ -1295,9 +1303,25 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     }
     function startGesture(x, y, target, fingers) {
       gesture = holdingReel() ? { x, y, free: freeToMove(target), vertical: fingers > 1 } : null;
+      if (!gesture) noteFreeSwipe();
+    }
+    let freeSwipeLoggedAt = 0;
+    function noteFreeSwipe() {
+      if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page) || Date.now() - freeSwipeLoggedAt < 5e3) return;
+      let biggest = null;
+      for (const video of document.querySelectorAll("video")) {
+        const r = video.getBoundingClientRect();
+        if (!biggest || r.height * r.width > biggest.height * biggest.width) biggest = r;
+      }
+      if (!biggest) return;
+      freeSwipeLoggedAt = Date.now();
+      const share = (a, b) => Math.round(a / b * 100);
+      log.add(
+        `swipe left free on ${pageLabel()}: biggest video ${share(biggest.width, window.innerWidth)}% wide, ${share(biggest.height, window.innerHeight)}% tall, top at ${share(biggest.top, window.innerHeight)}%`
+      );
     }
     function swipeMove(x, y) {
-      if (!gesture || gesture.free || !holdingReel()) return false;
+      if (!gesture || gesture.free) return false;
       const dx = Math.abs(x - gesture.x);
       const dy = Math.abs(y - gesture.y);
       if (!gesture.vertical && dy > 8 && dy >= dx) {
@@ -1322,7 +1346,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     window.addEventListener(
       "touchmove",
       (e) => {
-        if (!gesture || gesture.free || !holdingReel()) return;
+        if (!gesture || gesture.free) return;
         if (e.cancelable) e.preventDefault();
         if (swipeMove(e.touches[0].clientX, e.touches[0].clientY)) e.stopImmediatePropagation();
       },
@@ -1400,15 +1424,28 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       return r.bottom < window.innerHeight * 0.25 || r.top > window.innerHeight * 0.75;
     }
     function watchReel() {
-      if (!REEL_PAGES.includes(page)) reelWatch = null;
-      if (!reelWatch && (!REEL_PAGES.includes(page) || !settings.reelSwipe)) return;
-      if (blocked || document.hidden || !settings.reelSwipe) return;
-      const video = mainVideo();
-      if (!video) return;
+      if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page)) {
+        reelWatch = null;
+        return;
+      }
+      if (blocked || document.hidden) return;
+      const video = REEL_PAGES.includes(page) ? mainVideo() : fullScreenVideo();
+      if (!video) {
+        if (reelWatch && !REEL_PAGES.includes(page) && Date.now() - reelWatch.seen > 1500) reelWatch = null;
+        return;
+      }
+      if (reelWatch) reelWatch.seen = Date.now();
       if (!reelWatch) {
         const scroller = scrollerOf(video);
         const fromPath = reelRe2.exec(location.pathname);
-        reelWatch = { video, scroller, top: scroller.scrollTop, id: reelIdNear(video) || fromPath && fromPath[1], path: location.pathname };
+        reelWatch = {
+          video,
+          scroller,
+          top: scroller.scrollTop,
+          id: reelIdNear(video) || fromPath && fromPath[1],
+          path: location.pathname,
+          seen: Date.now()
+        };
         log.add("reel page: watching the reel you opened");
         if (!reelNoted) {
           reelNoted = true;
@@ -1520,7 +1557,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     setInterval(watchFeed, 500);
     setInterval(checkStoryAds, 400);
     setInterval(watchReel, 300);
-    window.addEventListener("scroll", () => REEL_PAGES.includes(page) && watchReel(), { capture: true, passive: true });
+    window.addEventListener("scroll", () => !FREE_SWIPE_PAGES.includes(page) && watchReel(), { capture: true, passive: true });
     setInterval(fixViewport, 500);
     new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
     function openFromHash() {
