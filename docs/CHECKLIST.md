@@ -66,6 +66,12 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Stay logged in:** close Safari (or the app) completely, reopen
       Instagram, and you're still logged in.
 
+## Android only
+- [ ] **Updates:** after Claude publishes a fix, open the app (or come back to it
+      after a minute or more): within a few seconds Instagram reloads, and the
+      settings show the new version at the bottom. It doesn't reload while you're in
+      DMs or making a post or story.
+
 ## iPhone only
 - [ ] **Home Screen icon:** the full-screen test in [IPHONE.md](IPHONE.md),
       step 5. Tell Claude whether the Reels button was gone.

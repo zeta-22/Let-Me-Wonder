@@ -36,9 +36,13 @@ usernames are replaced with `{user}`, captions and DM messages are left out, and
 anything you've typed is never included.
 
 ## Updates
-When Claude fixes something, the app downloads the fix in the background and uses
-it the next time you open it. To get it right away: settings → **Check for
-updates**. You never need to reinstall. Even when a new install is needed, it
+When Claude fixes something, the app gets the fix by itself when you open it: it
+downloads it in a few seconds and reloads Instagram with it. The same when you come
+back to the app after a minute or more (Android often keeps it open in the
+background). It never reloads while you're in DMs, making a post or a story, or
+logging in: then the fix waits for the next time you open the app. To get it right
+away: settings → **Check for updates**. The settings show which version you have,
+at the bottom (`filter 0.4.4`, for example). You never need to reinstall. Even when a new install is needed, it
 installs over the old one and you stay logged in.
 
 ## Privacy

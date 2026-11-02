@@ -1,8 +1,8 @@
 // Instagram's mobile site in a WebView, with the filter injected at page start.
 // The filter handles everything inside the page; this screen adds what only the
 // app can do: stop full page loads to blocked addresses, open other websites in
-// the phone's browser, the Android back button, the app's settings screen, and a
-// fresh page when Android stops the old one.
+// the phone's browser, the Android back button, the app's settings screen, a fresh
+// page when Android stops the old one, and updates installed when you open the app.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, BackHandler, Linking, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -15,6 +15,7 @@ import BlockedScreen from './BlockedScreen.js';
 import SettingsScreen from './SettingsScreen.js';
 import { REPORT_SCRIPT, settingsScript, startScript } from './injected.js';
 import { useTheme } from './theme.js';
+import { useUpdatesAtOpening } from './updates.js';
 import { decideUrl } from './urlPolicy.js';
 
 const START_URL = 'https://www.instagram.com/'; // Instagram's own home, with the stories
@@ -49,6 +50,8 @@ export default function InstagramScreen({ settings, onChangeSettings }) {
   const [webKey, setWebKey] = useState(0); // changed to start a fresh WebView
   const lastRestart = useRef(0);
   const pageDeaths = useRef([]); // when the page's process stopped, for the problem report
+
+  useUpdatesAtOpening(useCallback(() => page.current.path, []));
 
   // Used for the next page load; switch changes on the open page are sent right away below.
   const injected = useMemo(() => startScript(settings), [settings]);
