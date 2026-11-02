@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.4.2
+// @version      0.4.3
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.11.02c";
+  var RULES_VERSION = "2026.11.02d";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
@@ -729,7 +729,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.4.2" : "dev";
+  var VERSION = true ? "0.4.3" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -1282,11 +1282,13 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     }
     let reelWatch = null;
     let gesture = null;
+    let callingOff = false;
     let swipeLoggedAt = 0;
     let reelNoted = false;
+    const TAP_PX = 10;
     function holdingReel() {
       if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page)) return false;
-      return page === "reel" || !!fullScreenVideo();
+      return page === "reel" || !!fullScreenVideo() || !!(reelWatch && reelWatch.video.isConnected);
     }
     function fullScreenVideo() {
       const video = mainVideo();
@@ -1296,13 +1298,23 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     }
     function freeToMove(target) {
       if (!target || !target.closest) return true;
-      if (target.closest('input, textarea, [contenteditable="true"], #lmw-ui')) return true;
+      if (target.closest("#lmw-ui")) return true;
       const sheet = target.closest('[role="dialog"]');
-      const video = mainVideo();
-      return !!sheet && !(video && sheet.contains(video));
+      if (!sheet) return false;
+      const video = mainVideo() || reelWatch && reelWatch.video;
+      if (video && sheet.contains(video)) return false;
+      for (let n = target; n && n !== sheet.parentElement; n = n.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight + 4) return true;
+      }
+      return false;
     }
-    function startGesture(x, y, target, fingers) {
-      gesture = holdingReel() ? { x, y, free: freeToMove(target), vertical: fingers > 1 } : null;
+    function startGesture(x, y, target, pointerId, fingers) {
+      if (gesture && gesture.target === target && Date.now() - gesture.at < 400 && !gesture.ended) {
+        if (fingers > 1) gesture.moved = TAP_PX + 1;
+        if (pointerId != null) gesture.pointerId = pointerId;
+        return;
+      }
+      gesture = holdingReel() ? { x, y, target, pointerId, at: Date.now(), free: freeToMove(target), moved: fingers > 1 ? TAP_PX + 1 : 0, called: false } : null;
       if (!gesture) noteFreeSwipe();
     }
     let freeSwipeLoggedAt = 0;
@@ -1320,35 +1332,49 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         `swipe left free on ${pageLabel()}: biggest video ${share(biggest.width, window.innerWidth)}% wide, ${share(biggest.height, window.innerHeight)}% tall, top at ${share(biggest.top, window.innerHeight)}%`
       );
     }
-    function swipeMove(x, y) {
-      if (!gesture || gesture.free) return false;
-      const dx = Math.abs(x - gesture.x);
-      const dy = Math.abs(y - gesture.y);
-      if (!gesture.vertical && dy > 8 && dy >= dx) {
-        gesture.vertical = true;
-        if (Date.now() - swipeLoggedAt > 5e3) {
-          swipeLoggedAt = Date.now();
-          log.add("reel page: a swipe was stopped");
-        }
+    function callOff() {
+      if (!gesture || gesture.called) return;
+      gesture.called = true;
+      if (Date.now() - swipeLoggedAt > 5e3) {
+        swipeLoggedAt = Date.now();
+        log.add("reel page: a swipe was stopped");
       }
-      return gesture.vertical;
+      const { target, pointerId, x, y } = gesture;
+      callingOff = true;
+      try {
+        if (pointerId != null) {
+          target.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId, pointerType: "touch", isPrimary: true, clientX: x, clientY: y }));
+        }
+        let touches = [];
+        try {
+          touches = [new Touch({ identifier: 0, target, clientX: x, clientY: y })];
+        } catch (e) {
+        }
+        target.dispatchEvent(new TouchEvent("touchcancel", { bubbles: true, changedTouches: touches }));
+      } catch (e) {
+      } finally {
+        callingOff = false;
+      }
+    }
+    function heldMove(e, x, y) {
+      if (!gesture || gesture.free || callingOff) return false;
+      gesture.moved = Math.max(gesture.moved, Math.abs(x - gesture.x), Math.abs(y - gesture.y));
+      if (gesture.moved > TAP_PX) callOff();
+      e.stopImmediatePropagation();
+      return true;
     }
     const active = { capture: true, passive: false };
-    window.addEventListener("pointerdown", (e) => e.pointerType !== "mouse" && startGesture(e.clientX, e.clientY, e.target, 1), active);
-    window.addEventListener("touchstart", (e) => startGesture(e.touches[0].clientX, e.touches[0].clientY, e.target, e.touches.length), active);
-    window.addEventListener(
-      "pointermove",
-      (e) => {
-        if (e.pointerType !== "mouse" && swipeMove(e.clientX, e.clientY)) e.stopImmediatePropagation();
-      },
-      active
-    );
+    window.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "mouse" && !callingOff) startGesture(e.clientX, e.clientY, e.target, e.pointerId, 1);
+    }, active);
+    window.addEventListener("touchstart", (e) => {
+      if (!callingOff) startGesture(e.touches[0].clientX, e.touches[0].clientY, e.target, null, e.touches.length);
+    }, active);
+    window.addEventListener("pointermove", (e) => e.pointerType !== "mouse" && heldMove(e, e.clientX, e.clientY), active);
     window.addEventListener(
       "touchmove",
       (e) => {
-        if (!gesture || gesture.free) return;
-        if (e.cancelable) e.preventDefault();
-        if (swipeMove(e.touches[0].clientX, e.touches[0].clientY)) e.stopImmediatePropagation();
+        if (heldMove(e, e.touches[0].clientX, e.touches[0].clientY) && e.cancelable) e.preventDefault();
       },
       active
     );
@@ -1356,10 +1382,13 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       window.addEventListener(
         type,
         (e) => {
-          if (!gesture || !gesture.vertical || gesture.free) return;
-          e.stopImmediatePropagation();
-          if (e.cancelable && type.startsWith("touch")) e.preventDefault();
-          if (type.startsWith("touch") && e.touches.length === 0) gesture = null;
+          if (!gesture || gesture.free || callingOff) return;
+          if (gesture.moved > TAP_PX) {
+            callOff();
+            e.stopImmediatePropagation();
+            if (e.cancelable && type === "touchend") e.preventDefault();
+          }
+          if (!type.startsWith("touch") || e.touches.length === 0) gesture.ended = true;
         },
         active
       );
@@ -1376,7 +1405,8 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     window.addEventListener(
       "keydown",
       (e) => {
-        if (!holdingReel() || freeToMove(e.target)) return;
+        const typing = e.target && e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]');
+        if (typing || !holdingReel() || freeToMove(e.target)) return;
         if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", " ", "j", "k"].includes(e.key)) {
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -1429,7 +1459,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         return;
       }
       if (blocked || document.hidden) return;
-      const video = REEL_PAGES.includes(page) ? mainVideo() : fullScreenVideo();
+      const video = REEL_PAGES.includes(page) || reelWatch ? mainVideo() : fullScreenVideo();
       if (!video) {
         if (reelWatch && !REEL_PAGES.includes(page) && Date.now() - reelWatch.seen > 1500) reelWatch = null;
         return;

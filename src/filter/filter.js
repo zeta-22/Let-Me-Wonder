@@ -719,21 +719,26 @@ function start() {
   // and shows the Blocked screen; Go back scrolls back to your reel. Instagram drawing your
   // reel again isn't a swipe, and a link you tap yourself starts over with what you opened.
   let reelWatch = null; // { video, scroller, top, id, path }: the reel you opened
-  let gesture = null; // the finger on a reel page: { x, y, free, vertical }
+  let gesture = null; // the finger(s) on a held reel: { x, y, target, pointerId, free, moved, called }
+  let callingOff = false; // the filter's own cancel events, passing through its listeners
   let swipeLoggedAt = 0;
   let reelNoted = false;
+  const TAP_PX = 10; // a finger moving less than this is a tap
 
-  // Stopping the swipe itself, while a reel is on screen: a finger moving up or down never
-  // reaches the page, so neither the browser's scrolling nor Instagram's own code can move
-  // on to another reel, however long you've been watching. Taps still work (play, pause,
-  // sound, like, comments), and so does anything in a sheet opened over the reel (comments,
-  // share), which scrolls as usual. Two fingers don't scroll there either.
-  // "A reel on screen" is a reel's page, or any other page with a video filling the screen:
-  // Instagram can change the address a moment after a reel opens (back to the chat, to
-  // /p/...) while the reel stays, so the address alone isn't enough.
+  // Stopping the swipe itself, while a reel is on screen. Instagram never sees the finger
+  // move, from the first pixel: the page doesn't scroll, and Instagram's own code can't
+  // move on, open the reply box or anything else a swipe does. Once the finger has moved
+  // like a swipe, Instagram is told the gesture was called off (pointercancel and
+  // touchcancel, as the browser does when it handles a gesture itself), so nothing it
+  // started (a long press, a "swipe up to reply") stays half-done; and it never sees the
+  // finger lift. Taps still reach the reel (play, pause, sound, like, double tap, the
+  // comment box); a list that scrolls in a sheet over the reel (comments) scrolls as usual.
+  // "A reel on screen" is a reel's page, any other page with a video filling the screen
+  // (Instagram can change the address a moment after a reel opens), or the reel being
+  // watched, still there with the keyboard open.
   function holdingReel() {
     if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page)) return false;
-    return page === 'reel' || !!fullScreenVideo();
+    return page === 'reel' || !!fullScreenVideo() || !!(reelWatch && reelWatch.video.isConnected);
   }
 
   function fullScreenVideo() {
@@ -743,16 +748,30 @@ function start() {
     return r.height >= window.innerHeight * 0.7 && r.width >= window.innerWidth * 0.8 ? video : null;
   }
 
+  // Free to move on a held reel: the filter's own screens, and a list that scrolls in a
+  // sheet opened over the reel (comments, share), not the reel itself.
   function freeToMove(target) {
     if (!target || !target.closest) return true;
-    if (target.closest('input, textarea, [contenteditable="true"], #lmw-ui')) return true;
+    if (target.closest('#lmw-ui')) return true;
     const sheet = target.closest('[role="dialog"]');
-    const video = mainVideo();
-    return !!sheet && !(video && sheet.contains(video)); // a sheet over the reel, not the reel itself
+    if (!sheet) return false;
+    const video = mainVideo() || (reelWatch && reelWatch.video);
+    if (video && sheet.contains(video)) return false;
+    for (let n = target; n && n !== sheet.parentElement; n = n.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight + 4) return true;
+    }
+    return false;
   }
 
-  function startGesture(x, y, target, fingers) {
-    gesture = holdingReel() ? { x, y, free: freeToMove(target), vertical: fingers > 1 } : null;
+  function startGesture(x, y, target, pointerId, fingers) {
+    if (gesture && gesture.target === target && Date.now() - gesture.at < 400 && !gesture.ended) {
+      if (fingers > 1) gesture.moved = TAP_PX + 1; // two fingers: not a tap
+      if (pointerId != null) gesture.pointerId = pointerId;
+      return; // the same finger, as a pointer and as a touch
+    }
+    gesture = holdingReel()
+      ? { x, y, target, pointerId, at: Date.now(), free: freeToMove(target), moved: fingers > 1 ? TAP_PX + 1 : 0, called: false }
+      : null;
     if (!gesture) noteFreeSwipe();
   }
 
@@ -775,48 +794,71 @@ function start() {
     );
   }
 
-  // True when this move is part of a swipe up or down, which the filter keeps from the page.
-  function swipeMove(x, y) {
-    if (!gesture || gesture.free) return false;
-    const dx = Math.abs(x - gesture.x);
-    const dy = Math.abs(y - gesture.y);
-    if (!gesture.vertical && dy > 8 && dy >= dx) {
-      gesture.vertical = true;
-      if (Date.now() - swipeLoggedAt > 5000) {
-        swipeLoggedAt = Date.now();
-        log.add('reel page: a swipe was stopped');
-      }
+  // Tells Instagram the gesture was called off, once: a swipe it never saw move.
+  function callOff() {
+    if (!gesture || gesture.called) return;
+    gesture.called = true;
+    if (Date.now() - swipeLoggedAt > 5000) {
+      swipeLoggedAt = Date.now();
+      log.add('reel page: a swipe was stopped');
     }
-    return gesture.vertical;
+    const { target, pointerId, x, y } = gesture;
+    callingOff = true;
+    try {
+      if (pointerId != null) {
+        target.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y }));
+      }
+      let touches = [];
+      try {
+        touches = [new Touch({ identifier: 0, target, clientX: x, clientY: y })];
+      } catch (e) {
+        /* no Touch constructor here */
+      }
+      target.dispatchEvent(new TouchEvent('touchcancel', { bubbles: true, changedTouches: touches }));
+    } catch (e) {
+      /* a browser without these events: Instagram just never sees the finger lift */
+    } finally {
+      callingOff = false;
+    }
+  }
+
+  // A move of a held gesture: never reaches Instagram; past a tap, the gesture is called off.
+  function heldMove(e, x, y) {
+    if (!gesture || gesture.free || callingOff) return false;
+    gesture.moved = Math.max(gesture.moved, Math.abs(x - gesture.x), Math.abs(y - gesture.y));
+    if (gesture.moved > TAP_PX) callOff();
+    e.stopImmediatePropagation();
+    return true;
   }
 
   const active = { capture: true, passive: false };
-  window.addEventListener('pointerdown', (e) => e.pointerType !== 'mouse' && startGesture(e.clientX, e.clientY, e.target, 1), active);
-  window.addEventListener('touchstart', (e) => startGesture(e.touches[0].clientX, e.touches[0].clientY, e.target, e.touches.length), active);
-  window.addEventListener(
-    'pointermove',
-    (e) => {
-      if (e.pointerType !== 'mouse' && swipeMove(e.clientX, e.clientY)) e.stopImmediatePropagation();
-    },
-    active,
-  );
+  window.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'mouse' && !callingOff) startGesture(e.clientX, e.clientY, e.target, e.pointerId, 1);
+  }, active);
+  window.addEventListener('touchstart', (e) => {
+    if (!callingOff) startGesture(e.touches[0].clientX, e.touches[0].clientY, e.target, null, e.touches.length);
+  }, active);
+  window.addEventListener('pointermove', (e) => e.pointerType !== 'mouse' && heldMove(e, e.clientX, e.clientY), active);
   window.addEventListener(
     'touchmove',
     (e) => {
-      if (!gesture || gesture.free) return;
-      if (e.cancelable) e.preventDefault(); // the page under the reel never scrolls
-      if (swipeMove(e.touches[0].clientX, e.touches[0].clientY)) e.stopImmediatePropagation();
+      if (heldMove(e, e.touches[0].clientX, e.touches[0].clientY) && e.cancelable) e.preventDefault(); // no scrolling under the reel
     },
     active,
   );
+  // The end of a swipe never reaches Instagram (it was told the gesture was called off);
+  // the end of a tap does.
   for (const type of ['pointerup', 'pointercancel', 'touchend', 'touchcancel']) {
     window.addEventListener(
       type,
       (e) => {
-        if (!gesture || !gesture.vertical || gesture.free) return;
-        e.stopImmediatePropagation(); // Instagram never sees a swipe end
-        if (e.cancelable && type.startsWith('touch')) e.preventDefault();
-        if (type.startsWith('touch') && e.touches.length === 0) gesture = null;
+        if (!gesture || gesture.free || callingOff) return;
+        if (gesture.moved > TAP_PX) {
+          callOff();
+          e.stopImmediatePropagation();
+          if (e.cancelable && type === 'touchend') e.preventDefault(); // and no click
+        }
+        if (!type.startsWith('touch') || e.touches.length === 0) gesture.ended = true;
       },
       active,
     );
@@ -834,7 +876,8 @@ function start() {
   window.addEventListener(
     'keydown',
     (e) => {
-      if (!holdingReel() || freeToMove(e.target)) return;
+      const typing = e.target && e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]');
+      if (typing || !holdingReel() || freeToMove(e.target)) return;
       if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'j', 'k'].includes(e.key)) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -897,7 +940,7 @@ function start() {
     if (blocked || document.hidden) return;
     // On a reel's page, the main video; elsewhere (the address changed, a reel over a
     // chat), one filling the screen. When none has been there for a while, the reel closed.
-    const video = REEL_PAGES.includes(page) ? mainVideo() : fullScreenVideo();
+    const video = REEL_PAGES.includes(page) || reelWatch ? mainVideo() : fullScreenVideo();
     if (!video) {
       if (reelWatch && !REEL_PAGES.includes(page) && Date.now() - reelWatch.seen > 1500) reelWatch = null;
       return;
