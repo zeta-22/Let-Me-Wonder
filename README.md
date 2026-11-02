@@ -42,10 +42,11 @@ the moment it starts loading, and works in five layers:
    blocked: that's what stops the endless swipe. While a reel is on screen (a
    reel's page, or any page showing a video that fills the screen, since
    Instagram can change the address a moment after a reel opens) the swipe
-   itself is stopped too: a finger moving up or down (or the wheel, or the
-   up/down keys) never reaches the page, so neither the browser nor Instagram's
-   own code can move on, however long you've watched. Taps work as usual, and
-   sheets over the reel (comments, share) scroll. As a backstop, if another
+   itself is stopped too: Instagram never sees the finger move (nor the wheel,
+   nor the up/down keys), and once it's a swipe Instagram is told the gesture
+   was called off, so it can't move on, open the reply box (the keyboard) or
+   anything else, however long you've watched, also with the keyboard open.
+   Taps work as usual, and lists in sheets over the reel (comments) scroll. As a backstop, if another
    full-screen video still takes the reel's place, it's paused and blocked, and
    **Go back** scrolls back to your reel. Home is Instagram's own home page, with the
    stories row.

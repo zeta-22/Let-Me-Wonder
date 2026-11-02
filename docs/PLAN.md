@@ -714,6 +714,36 @@ Fix (0.4.2): what's on screen decides, not the address.
 Tests: with the address changing after 2 s (to the chat, to /p/), a finger swipe doesn't
 move on and the backstop still blocks; a chat without a reel on screen scrolls. 55 pass.
 
+### Stage 3, round 14: no keyboard on a swipe, held with the keyboard open (2026-11-02)
+What you said (on 0.4.2): swiping is stopped now, but a swipe opens the keyboard; and with
+the keyboard open, the reel scrolls.
+
+Why: 0.4.2 let a swipe's first few pixels through to Instagram (it stopped the gesture
+only past 8 px) and then swallowed the finger lifting without telling Instagram anything.
+So Instagram saw a finger go down, maybe move a little, and never come up: enough for its
+"swipe up to reply" or long press, which open the reply box with the keyboard. And the
+filter let gestures through on any input or any sheet over the reel; with the keyboard
+open the screen is shorter and the reply box is there, so the swipe got through. The fake
+viewer now reacts like that (a few pixels up, or a finger held 600 ms, open the reply box);
+0.4.2 opens it on a swipe.
+
+Fix (0.4.3), while a reel is held:
+- Instagram never sees the finger move, from the first pixel (every pointermove and
+  touchmove stopped, and touchmove's default prevented).
+- Once the finger has moved more than 10 px, Instagram is told the gesture was called off
+  (a pointercancel and a touchcancel, as the browser does when it handles a gesture), so
+  nothing it started stays half-done; it never sees the finger lift, and there's no click.
+  A tap (under 10 px) reaches the reel as before.
+- Free: only a list that scrolls inside a sheet over the reel (comments) and the filter's
+  own screens. Typing is never blocked (the up/down/space/j/k keys only on the reel).
+- The reel being watched stays held while it's on screen, also with the keyboard open (a
+  shorter screen), not only while a video fills the screen.
+
+Tests: a swipe doesn't open the reply box and nothing is left half-started; with a reply
+box focused and the screen shorter, a swipe on the reel doesn't move on; typing works,
+spaces and j/k included; taps, the comments sheet, Home and the switch off as before.
+56 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

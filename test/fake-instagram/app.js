@@ -360,8 +360,38 @@
       down = null;
     });
     let pointerDown = null;
-    list.addEventListener('pointerdown', (e) => (pointerDown = e.clientY));
+    // Like Instagram's viewer opened from a DM: a finger moving up a few pixels, or held
+    // still on the reel for 600 ms, opens the reply box with the keyboard.
+    let hold = null;
+    const openReply = () => {
+      if (document.querySelector('[data-fx="reply-box"]')) return;
+      window.fakeReplyOpened = true;
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        '<div data-fx="reply" style="position:fixed;left:0;right:0;bottom:0;background:#fff"><textarea data-fx="reply-box"></textarea></div>',
+      );
+      document.querySelector('[data-fx="reply-box"]').focus();
+    };
+    const stopHold = () => {
+      clearTimeout(hold);
+      hold = null;
+    };
+    list.addEventListener('pointerdown', (e) => {
+      pointerDown = e.clientY;
+      stopHold();
+      hold = setTimeout(openReply, 600);
+    });
+    list.addEventListener('pointermove', (e) => {
+      if (pointerDown === null) return;
+      if (Math.abs(e.clientY - pointerDown) > 4) stopHold();
+      if (pointerDown - e.clientY > 5) openReply();
+    });
+    list.addEventListener('pointercancel', () => {
+      stopHold();
+      pointerDown = null;
+    });
     list.addEventListener('pointerup', (e) => {
+      stopHold();
       if (pointerDown !== null && pointerDown - e.clientY > 60) next();
       pointerDown = null;
     });

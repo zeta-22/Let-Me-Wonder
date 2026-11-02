@@ -488,6 +488,34 @@ test('a DM chat without a reel on screen scrolls as usual', async () => {
   assert.ok((await page.evaluate(() => window.scrollY)) > 100);
 });
 
+test('on a reel, a swipe doesn’t open the reply box (no keyboard), and with the keyboard open it still doesn’t move on', async () => {
+  const page = await open(browser, '/reel/DM1/?fake=reelfeed');
+  const state = () =>
+    page.evaluate(() => ({
+      top: document.querySelector('[data-fx="reel-list"]').scrollTop,
+      code: window.fakeCodeSwipes,
+      reply: !!window.fakeReplyOpened,
+    }));
+  await page.waitForTimeout(2000);
+  await fingerSwipe(page, 600, 120);
+  assert.deepEqual(await state(), { top: 0, code: 0, reply: false }, 'no next reel, no reply box');
+  await page.waitForTimeout(800);
+  assert.equal(await state().then((s) => s.reply), false, 'nothing left half-started');
+
+  // The keyboard open (the reply box focused, the screen shorter): swiping on the reel still doesn't move on.
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;left:0;right:0;bottom:0"><textarea data-fx="typing"></textarea></div>');
+    document.querySelector('[data-fx="typing"]').focus();
+  });
+  await page.setViewportSize({ width: 390, height: 380 });
+  await page.waitForTimeout(400);
+  await fingerSwipe(page, 300, 60);
+  const after = await state();
+  assert.deepEqual([after.top, after.code], [0, 0], 'still on the reel you opened');
+  await page.keyboard.type('ok j k');
+  assert.equal(await page.evaluate(() => document.querySelector('[data-fx="typing"]').value), 'ok j k', 'typing works, spaces too');
+});
+
 test('swipes elsewhere are left alone: Home scrolls, and with the switch off a reel page does too', async () => {
   const home = await open(browser, '/');
   await home.evaluate(() => (document.body.style.paddingBottom = '3000px'));
