@@ -717,6 +717,98 @@ function start() {
   // and shows the Blocked screen; Go back scrolls back to your reel. Instagram drawing your
   // reel again isn't a swipe, and a link you tap yourself starts over with what you opened.
   let reelWatch = null; // { video, scroller, top, id, path }: the reel you opened
+  let gesture = null; // the finger on a reel page: { x, y, free, vertical }
+  let swipeLoggedAt = 0;
+  let reelNoted = false;
+
+  // Stopping the swipe itself, on a reel's page: a finger moving up or down never reaches
+  // the page, so neither the browser's scrolling nor Instagram's own code can move on to
+  // another reel, however long you've been watching. Taps still work (play, pause, sound,
+  // like, comments), and so does anything in a sheet opened over the reel (comments,
+  // share), which scrolls as usual. Two fingers don't scroll there either.
+  function holdingReel() {
+    return page === 'reel' && settings.reelSwipe;
+  }
+
+  function freeToMove(target) {
+    if (!target || !target.closest) return true;
+    if (target.closest('input, textarea, [contenteditable="true"], #lmw-ui')) return true;
+    const sheet = target.closest('[role="dialog"]');
+    const video = mainVideo();
+    return !!sheet && !(video && sheet.contains(video)); // a sheet over the reel, not the reel itself
+  }
+
+  function startGesture(x, y, target, fingers) {
+    gesture = holdingReel() ? { x, y, free: freeToMove(target), vertical: fingers > 1 } : null;
+  }
+
+  // True when this move is part of a swipe up or down, which the filter keeps from the page.
+  function swipeMove(x, y) {
+    if (!gesture || gesture.free || !holdingReel()) return false;
+    const dx = Math.abs(x - gesture.x);
+    const dy = Math.abs(y - gesture.y);
+    if (!gesture.vertical && dy > 8 && dy >= dx) {
+      gesture.vertical = true;
+      if (Date.now() - swipeLoggedAt > 5000) {
+        swipeLoggedAt = Date.now();
+        log.add('reel page: a swipe was stopped');
+      }
+    }
+    return gesture.vertical;
+  }
+
+  const active = { capture: true, passive: false };
+  window.addEventListener('pointerdown', (e) => e.pointerType !== 'mouse' && startGesture(e.clientX, e.clientY, e.target, 1), active);
+  window.addEventListener('touchstart', (e) => startGesture(e.touches[0].clientX, e.touches[0].clientY, e.target, e.touches.length), active);
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      if (e.pointerType !== 'mouse' && swipeMove(e.clientX, e.clientY)) e.stopImmediatePropagation();
+    },
+    active,
+  );
+  window.addEventListener(
+    'touchmove',
+    (e) => {
+      if (!gesture || gesture.free || !holdingReel()) return;
+      if (e.cancelable) e.preventDefault(); // the reel page itself never scrolls
+      if (swipeMove(e.touches[0].clientX, e.touches[0].clientY)) e.stopImmediatePropagation();
+    },
+    active,
+  );
+  for (const type of ['pointerup', 'pointercancel', 'touchend', 'touchcancel']) {
+    window.addEventListener(
+      type,
+      (e) => {
+        if (!gesture || !gesture.vertical || gesture.free) return;
+        e.stopImmediatePropagation(); // Instagram never sees a swipe end
+        if (e.cancelable && type.startsWith('touch')) e.preventDefault();
+        if (type.startsWith('touch') && e.touches.length === 0) gesture = null;
+      },
+      active,
+    );
+  }
+  // The mouse wheel and the arrow keys move on through reels on a computer.
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      if (!holdingReel() || freeToMove(e.target) || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    },
+    active,
+  );
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!holdingReel() || freeToMove(e.target)) return;
+      if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'j', 'k'].includes(e.key)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    },
+    active,
+  );
 
   // The video filling most of the screen, if any (at least half the screen tall, mostly in view).
   function mainVideo() {
@@ -775,14 +867,19 @@ function start() {
       const fromPath = reelRe.exec(location.pathname);
       reelWatch = { video, scroller, top: scroller.scrollTop, id: reelIdNear(video) || (fromPath && fromPath[1]), path: location.pathname };
       log.add('reel page: watching the reel you opened');
+      if (!reelNoted) {
+        reelNoted = true;
+        log.note('the reel page', outlineOf(document.querySelector('main') || document.body));
+      }
       return;
     }
-    if (video === reelWatch.video) return;
     const w = reelWatch;
     const otherId = reelIdNear(video);
+    if (video === w.video && !(otherId && w.id && otherId !== w.id)) return; // the same player can show another reel
     const moved = w.scroller.isConnected && Math.abs(w.scroller.scrollTop - w.top) > window.innerHeight * 0.4;
     const yoursGone = w.video.isConnected && offScreen(w.video);
     if (moved || yoursGone || (otherId && w.id && otherId !== w.id)) {
+      pauseMedia();
       log.add('reel page: another reel came up, blocked');
       showBlocked(REEL_SWIPE.toggle, false, () => {
         if (w.scroller.isConnected) w.scroller.scrollTo({ top: w.top });
@@ -901,6 +998,7 @@ function start() {
   setInterval(watchFeed, 500);
   setInterval(checkStoryAds, 400); // an ad still showing after a skip, or the next one
   setInterval(watchReel, 300); // another reel taking the place of the one you opened
+  window.addEventListener('scroll', () => REEL_PAGES.includes(page) && watchReel(), { capture: true, passive: true }); // and right away
   setInterval(fixViewport, 500); // in case Instagram changes its viewport tag without adding nodes
   new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
 

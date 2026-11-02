@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.4.0
+// @version      0.4.1
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.11.02";
+  var RULES_VERSION = "2026.11.02b";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
@@ -729,7 +729,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.4.0" : "dev";
+  var VERSION = true ? "0.4.1" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -1280,6 +1280,86 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       }, 1500);
     }
     let reelWatch = null;
+    let gesture = null;
+    let swipeLoggedAt = 0;
+    let reelNoted = false;
+    function holdingReel() {
+      return page === "reel" && settings.reelSwipe;
+    }
+    function freeToMove(target) {
+      if (!target || !target.closest) return true;
+      if (target.closest('input, textarea, [contenteditable="true"], #lmw-ui')) return true;
+      const sheet = target.closest('[role="dialog"]');
+      const video = mainVideo();
+      return !!sheet && !(video && sheet.contains(video));
+    }
+    function startGesture(x, y, target, fingers) {
+      gesture = holdingReel() ? { x, y, free: freeToMove(target), vertical: fingers > 1 } : null;
+    }
+    function swipeMove(x, y) {
+      if (!gesture || gesture.free || !holdingReel()) return false;
+      const dx = Math.abs(x - gesture.x);
+      const dy = Math.abs(y - gesture.y);
+      if (!gesture.vertical && dy > 8 && dy >= dx) {
+        gesture.vertical = true;
+        if (Date.now() - swipeLoggedAt > 5e3) {
+          swipeLoggedAt = Date.now();
+          log.add("reel page: a swipe was stopped");
+        }
+      }
+      return gesture.vertical;
+    }
+    const active = { capture: true, passive: false };
+    window.addEventListener("pointerdown", (e) => e.pointerType !== "mouse" && startGesture(e.clientX, e.clientY, e.target, 1), active);
+    window.addEventListener("touchstart", (e) => startGesture(e.touches[0].clientX, e.touches[0].clientY, e.target, e.touches.length), active);
+    window.addEventListener(
+      "pointermove",
+      (e) => {
+        if (e.pointerType !== "mouse" && swipeMove(e.clientX, e.clientY)) e.stopImmediatePropagation();
+      },
+      active
+    );
+    window.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!gesture || gesture.free || !holdingReel()) return;
+        if (e.cancelable) e.preventDefault();
+        if (swipeMove(e.touches[0].clientX, e.touches[0].clientY)) e.stopImmediatePropagation();
+      },
+      active
+    );
+    for (const type of ["pointerup", "pointercancel", "touchend", "touchcancel"]) {
+      window.addEventListener(
+        type,
+        (e) => {
+          if (!gesture || !gesture.vertical || gesture.free) return;
+          e.stopImmediatePropagation();
+          if (e.cancelable && type.startsWith("touch")) e.preventDefault();
+          if (type.startsWith("touch") && e.touches.length === 0) gesture = null;
+        },
+        active
+      );
+    }
+    window.addEventListener(
+      "wheel",
+      (e) => {
+        if (!holdingReel() || freeToMove(e.target) || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      },
+      active
+    );
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (!holdingReel() || freeToMove(e.target)) return;
+        if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", " ", "j", "k"].includes(e.key)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      },
+      active
+    );
     function mainVideo() {
       let best = null;
       let bestShown = 0;
@@ -1330,14 +1410,19 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         const fromPath = reelRe2.exec(location.pathname);
         reelWatch = { video, scroller, top: scroller.scrollTop, id: reelIdNear(video) || fromPath && fromPath[1], path: location.pathname };
         log.add("reel page: watching the reel you opened");
+        if (!reelNoted) {
+          reelNoted = true;
+          log.note("the reel page", outlineOf(document.querySelector("main") || document.body));
+        }
         return;
       }
-      if (video === reelWatch.video) return;
       const w = reelWatch;
       const otherId = reelIdNear(video);
+      if (video === w.video && !(otherId && w.id && otherId !== w.id)) return;
       const moved = w.scroller.isConnected && Math.abs(w.scroller.scrollTop - w.top) > window.innerHeight * 0.4;
       const yoursGone = w.video.isConnected && offScreen(w.video);
       if (moved || yoursGone || otherId && w.id && otherId !== w.id) {
+        pauseMedia();
         log.add("reel page: another reel came up, blocked");
         showBlocked(REEL_SWIPE.toggle, false, () => {
           if (w.scroller.isConnected) w.scroller.scrollTo({ top: w.top });
@@ -1435,6 +1520,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     setInterval(watchFeed, 500);
     setInterval(checkStoryAds, 400);
     setInterval(watchReel, 300);
+    window.addEventListener("scroll", () => REEL_PAGES.includes(page) && watchReel(), { capture: true, passive: true });
     setInterval(fixViewport, 500);
     new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
     function openFromHash() {

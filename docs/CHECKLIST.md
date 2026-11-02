@@ -44,7 +44,9 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Reel from a friend:** a reel sent to you in DMs plays. Swiping to the
       next one, or tapping another reel from there, shows the **Blocked**
       screen; **Go back** returns to the reel. Also after watching it for a
-      while (10 seconds or more), swiping on is still blocked.
+      while (10 seconds or more), swiping up or down does nothing: you never
+      see the next reel. Tapping the reel (pause, sound, like) and scrolling
+      the comments still work.
 
 ## Should still work
 - [ ] **DMs:** read, reply, send a photo.

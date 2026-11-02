@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {
   launch, open, visible, tap, path, search, blockedShown, blockedMessage, tapGoBack,
   gearShown, panelShown, tapGear, flipSwitch, switchesLocked, lockMessage, enterCode, closePanel, TEST_CODE,
-  viewportTag, pinch, INSTAGRAM_VIEWPORT,
+  viewportTag, pinch, INSTAGRAM_VIEWPORT, fingerSwipe,
 } from './helpers.mjs';
 
 let browser;
@@ -442,6 +442,39 @@ test('on a reel you opened, swiping on to other reels is blocked even when the a
   await page.waitForTimeout(800);
   assert.equal(await blockedShown(page), false, 'and you can keep watching it');
   assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /reel page: another reel came up, blocked/);
+});
+
+test('on a reel you opened, a finger swipe never moves on: not the page, not Instagram’s own code', async () => {
+  const page = await open(browser, '/reel/DM1/?fake=reelfeed');
+  const state = () =>
+    page.evaluate(() => ({ top: document.querySelector('[data-fx="reel-list"]').scrollTop, code: window.fakeCodeSwipes }));
+  await page.waitForTimeout(3000); // watching it for a few seconds first
+  await fingerSwipe(page, 600, 120);
+  assert.deepEqual(await state(), { top: 0, code: 0 }, 'still on the reel you opened');
+  await page.waitForTimeout(2000);
+  await fingerSwipe(page, 640, 80); // and again, later, a longer one
+  assert.deepEqual(await state(), { top: 0, code: 0 });
+  assert.equal(await blockedShown(page), false, 'nothing moved, so nothing to block');
+  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /reel page: a swipe was stopped/);
+  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /the reel page:\n {2}main role=main/);
+
+  await page.touchscreen.tap(180, 300); // taps still reach the reel (play, pause, like…)
+  assert.equal(await page.evaluate(() => window.fakeTaps), 1);
+  await page.evaluate(() => document.querySelector('[data-fx="reel-comments-0"]').click());
+  await fingerSwipe(page, 600, 350); // the comments sheet over the reel scrolls
+  assert.ok((await page.evaluate(() => document.querySelector('[data-fx="comments-sheet"]').scrollTop)) > 50);
+  assert.deepEqual(await state(), { top: 0, code: 0 });
+});
+
+test('swipes elsewhere are left alone: Home scrolls, and with the switch off a reel page does too', async () => {
+  const home = await open(browser, '/');
+  await home.evaluate(() => (document.body.style.paddingBottom = '3000px'));
+  await fingerSwipe(home, 600, 150);
+  assert.ok((await home.evaluate(() => window.scrollY)) > 100, 'Home scrolls');
+
+  const off = await open(browser, '/reel/DM1/?fake=reelfeed', { settings: { reelSwipe: false } });
+  await fingerSwipe(off, 600, 120);
+  assert.ok((await off.evaluate(() => document.querySelector('[data-fx="reel-list"]').scrollTop)) > 100);
 });
 
 test('on a reel you opened: Instagram drawing it again isn’t a swipe; with the switch off, swiping works', async () => {
