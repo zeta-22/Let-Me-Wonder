@@ -39,8 +39,12 @@ the moment it starts loading, and works in five layers:
    blocked links are stopped. If Instagram moves to a blocked page anyway, a
    **Blocked** screen covers it, pauses any video, and offers **Go back**. On a
    single reel (e.g. one sent in DMs), moving to a *different* reel is
-   blocked: that's what stops the endless swipe. Home is Instagram's own home
-   page, with the stories row.
+   blocked: that's what stops the endless swipe. Once Instagram's reel viewer
+   has loaded, a swipe can bring up the next reel without the address changing,
+   so the filter also watches the screen: if another full-screen video takes
+   the place of the reel you opened, it's paused and blocked, and **Go back**
+   scrolls back to your reel. Home is Instagram's own home page, with the
+   stories row.
 4. **The feed keeps its own layout.** Instagram's feed keeps only the posts
    near the screen in the page, and holds the room of the others from their
    measured heights. So a hidden post keeps its exact size: it is *covered*

@@ -426,6 +426,41 @@ test('DMs: messages stay (even one saying "Sponsored"), a shared reel plays, the
   assert.equal(await blockedShown(page), false);
 });
 
+test('on a reel you opened, swiping on to other reels is blocked even when the address doesn’t change', async () => {
+  const page = await open(browser, '/reel/DM1/?fake=reelfeed');
+  const list = () => page.evaluate(() => document.querySelector('[data-fx="reel-list"]').scrollTop);
+  await page.waitForTimeout(3000); // watching it for a few seconds
+  await page.evaluate(() => document.querySelector('[data-fx="reel-list"]').scrollBy(0, window.innerHeight)); // a swipe
+  await page.waitForTimeout(800);
+  assert.equal(await path(page), '/reel/DM1/', 'Instagram didn’t change the address');
+  assert.equal(await blockedShown(page), true, 'the next reel is blocked');
+  assert.match(await blockedMessage(page), /Moving on to other reels is switched off/);
+  await tapGoBack(page);
+  await page.waitForTimeout(500);
+  assert.equal(await blockedShown(page), false);
+  assert.equal(await list(), 0, 'Go back: on your reel again');
+  await page.waitForTimeout(800);
+  assert.equal(await blockedShown(page), false, 'and you can keep watching it');
+  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /reel page: another reel came up, blocked/);
+});
+
+test('on a reel you opened: Instagram drawing it again isn’t a swipe; with the switch off, swiping works', async () => {
+  const page = await open(browser, '/reel/DM1/?fake=reelfeed');
+  await page.waitForTimeout(800);
+  await page.evaluate(() => {
+    const v = document.querySelector('[data-fx="reel-video-0"]');
+    v.replaceWith(v.cloneNode());
+  });
+  await page.waitForTimeout(800);
+  assert.equal(await blockedShown(page), false);
+
+  const off = await open(browser, '/reel/DM1/?fake=reelfeed', { settings: { reelSwipe: false } });
+  await off.waitForTimeout(800);
+  await off.evaluate(() => document.querySelector('[data-fx="reel-list"]').scrollBy(0, window.innerHeight));
+  await off.waitForTimeout(800);
+  assert.equal(await blockedShown(off), false);
+});
+
 test('profiles: header, posts grid and tabs stay; Reels tab and suggestions go', async () => {
   const page = await open(browser, '/friend_one/');
   await expectVisible(page, ['profile-header', 'profile-grid', 'tab-posts', 'tab-tagged'], true);
