@@ -341,8 +341,12 @@
     }
   }
 
+  // With &after=direct or &after=post, 2 s after the reel opens Instagram changes the
+  // address (back to the chat, or to the post's address) while the reel stays on screen.
   function startReelFeed() {
     const list = view.querySelector('[data-fx="reel-list"]');
+    const after = { direct: '/direct/t/123/', post: '/p/DM1/' }[params.get('after')];
+    if (after) setTimeout(() => history.replaceState({}, '', after + location.search), 2000);
     window.fakeTaps = 0;
     window.fakeCodeSwipes = 0;
     let down = null;

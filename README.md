@@ -39,7 +39,9 @@ the moment it starts loading, and works in five layers:
    blocked links are stopped. If Instagram moves to a blocked page anyway, a
    **Blocked** screen covers it, pauses any video, and offers **Go back**. On a
    single reel (e.g. one sent in DMs), moving to a *different* reel is
-   blocked: that's what stops the endless swipe. On a reel's page the swipe
+   blocked: that's what stops the endless swipe. While a reel is on screen (a
+   reel's page, or any page showing a video that fills the screen, since
+   Instagram can change the address a moment after a reel opens) the swipe
    itself is stopped too: a finger moving up or down (or the wheel, or the
    up/down keys) never reaches the page, so neither the browser nor Instagram's
    own code can move on, however long you've watched. Taps work as usual, and
