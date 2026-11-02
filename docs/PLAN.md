@@ -858,6 +858,9 @@ opens; a swipe on the reel still moves nothing; a tapped name link opens, a tapp
 another reel is blocked; a long press isn't a tap; a box Instagram focuses by itself is
 closed. `npm run smoke`: the shield is up and a tap reaches Instagram (the sound). 66 pass.
 
+Published, as you said: Android (EAS Update, channel `preview`, update group `f52a279c`),
+and merged to `main` for the iPhone.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.
