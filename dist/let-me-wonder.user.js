@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.3.9
+// @version      0.4.0
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.10.31h";
+  var RULES_VERSION = "2026.11.02";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
@@ -729,7 +729,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.3.9" : "dev";
+  var VERSION = true ? "0.4.0" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -742,6 +742,8 @@
   var STORY_MAX_TRIES = 3;
   var STORY_WAY_MS = 3e3;
   var SWIPE_PX = 50;
+  var REEL_PAGES = ["reel", "post"];
+  var reelRe2 = new RegExp(REEL_SWIPE.path);
   function coverCss(scope, target, label) {
     const sel = `${scope} ${target}`;
     const small = `${scope}[data-lmw-on~="smallCovers"] ${target}`;
@@ -910,7 +912,10 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       }
       if (url.origin !== location.origin) return;
       const verdict = decide(url.pathname, allowedPath, settings, { tapped: true });
-      if (verdict.action === "allow") return;
+      if (verdict.action === "allow") {
+        reelWatch = null;
+        return;
+      }
       e.preventDefault();
       e.stopImmediatePropagation();
       if (verdict.action === "redirect") leaveFor(verdict.to, verdict.toggle, false);
@@ -946,9 +951,9 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         })
       );
     }
-    function showBlocked(toggle, navigated) {
+    function showBlocked(toggle, navigated, back) {
       log.add(`Blocked screen: ${toggle}`);
-      blocked = { toggle, navigated };
+      blocked = { toggle, navigated, back };
       applyRootState();
       pauseMedia();
       ui.showBlocked(messageFor(toggle), goBack);
@@ -960,7 +965,11 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       applyRootState();
     }
     function goBack() {
-      if (!blocked || !blocked.navigated) {
+      if (blocked && blocked.back) {
+        const back = blocked.back;
+        hideBlocked();
+        back();
+      } else if (!blocked || !blocked.navigated) {
         hideBlocked();
       } else if (navCount > 0 || arrivedFrom) {
         history.back();
@@ -1270,6 +1279,75 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         log.note("the page for making a post or story", outlineOf(document.querySelector("main") || document.body));
       }, 1500);
     }
+    let reelWatch = null;
+    function mainVideo() {
+      let best = null;
+      let bestShown = 0;
+      for (const video of document.querySelectorAll("video")) {
+        const r = video.getBoundingClientRect();
+        if (r.height < window.innerHeight * 0.5) continue;
+        const shown = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+        if (shown < Math.min(r.height, window.innerHeight) * 0.6) continue;
+        if (shown > bestShown) {
+          best = video;
+          bestShown = shown;
+        }
+      }
+      return best;
+    }
+    function scrollerOf(el2) {
+      for (let n = el2.parentElement; n && n !== document.body; n = n.parentElement) {
+        if (/(auto|scroll)/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight + 10) return n;
+      }
+      return document.scrollingElement || document.documentElement;
+    }
+    function reelIdNear(video) {
+      let item = video;
+      while (item.parentElement && item.parentElement !== document.body && item.parentElement.querySelectorAll("video").length === 1) {
+        item = item.parentElement;
+      }
+      for (const a of item.querySelectorAll("a[href]")) {
+        try {
+          const m = reelRe2.exec(new URL(a.getAttribute("href"), location.href).pathname);
+          if (m) return m[1];
+        } catch (e) {
+        }
+      }
+      return null;
+    }
+    function offScreen(el2) {
+      const r = el2.getBoundingClientRect();
+      return r.bottom < window.innerHeight * 0.25 || r.top > window.innerHeight * 0.75;
+    }
+    function watchReel() {
+      if (!REEL_PAGES.includes(page)) reelWatch = null;
+      if (!reelWatch && (!REEL_PAGES.includes(page) || !settings.reelSwipe)) return;
+      if (blocked || document.hidden || !settings.reelSwipe) return;
+      const video = mainVideo();
+      if (!video) return;
+      if (!reelWatch) {
+        const scroller = scrollerOf(video);
+        const fromPath = reelRe2.exec(location.pathname);
+        reelWatch = { video, scroller, top: scroller.scrollTop, id: reelIdNear(video) || fromPath && fromPath[1], path: location.pathname };
+        log.add("reel page: watching the reel you opened");
+        return;
+      }
+      if (video === reelWatch.video) return;
+      const w = reelWatch;
+      const otherId = reelIdNear(video);
+      const moved = w.scroller.isConnected && Math.abs(w.scroller.scrollTop - w.top) > window.innerHeight * 0.4;
+      const yoursGone = w.video.isConnected && offScreen(w.video);
+      if (moved || yoursGone || otherId && w.id && otherId !== w.id) {
+        log.add("reel page: another reel came up, blocked");
+        showBlocked(REEL_SWIPE.toggle, false, () => {
+          if (w.scroller.isConnected) w.scroller.scrollTo({ top: w.top });
+          else if (w.video.isConnected) w.video.scrollIntoView({ block: "center" });
+          else location.replace(w.path);
+        });
+      } else {
+        w.video = video;
+      }
+    }
     function watchFeed() {
       if (page !== "home" || blocked || document.hidden) return;
       const post = document.querySelector(STRUCTURE.post);
@@ -1356,6 +1434,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     setInterval(checkPath, 300);
     setInterval(watchFeed, 500);
     setInterval(checkStoryAds, 400);
+    setInterval(watchReel, 300);
     setInterval(fixViewport, 500);
     new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
     function openFromHash() {

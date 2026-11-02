@@ -636,6 +636,31 @@ per te" and stay hidden by "Suggested posts and accounts", which is still locked
 are the Reels tab and reel-to-reel swiping. Test: the switch moves without the code and
 applies at once, while a suggested post stays hidden. 48 pass. (0.3.9)
 
+### Stage 3, round 11: swiping on after watching a reel for a while (2026-11-02)
+What you said: on a reel someone sent you, swiping right away is blocked, but after a few
+seconds on it you can swipe on through other reels. You want no swiping at all.
+
+The cause: the reel-swipe block only compares addresses (`/reel/A/` to `/reel/B/`). Once
+Instagram's reel viewer has loaded, a swipe can bring up the next reel without the
+address changing (or into one the filter doesn't read as another reel), so nothing
+stopped it. Reproduced in the fake: a reel page that is a full-screen, scroll-snap list
+of reels, where scrolling to the next one leaves the address as it was.
+
+Fix (0.4.0): the filter also watches the screen on a reel's own page (`reel` and `post`
+pages). It remembers the full-screen video you opened (at least half the screen tall,
+mostly in view) and, if another one takes its place, pauses it and shows the Blocked
+screen. A swipe means the page scrolled by 40% of the screen or more, your reel went off
+screen, or the new video belongs to another reel (a reel link around it alone). **Go
+back** scrolls back to your reel (or reloads it, if Instagram removed it). Instagram
+drawing your reel again isn't a swipe, a link you tap yourself starts over with what you
+opened, and home, stories and DMs are left alone. The timeline notes when it starts
+watching a reel and when it blocks.
+
+Tests: after 3 s on the reel, a swipe that keeps the address is blocked, Go back is on
+your reel and it stays open; your reel drawn again isn't blocked; with "Swiping to the
+next reel" off, swiping works. Version 0.4.0, not 0.3.10, so no update check can read it
+as older than 0.3.9. 50 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

@@ -43,7 +43,8 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Profiles:** no Reels tab and no "Suggested for you" row.
 - [ ] **Reel from a friend:** a reel sent to you in DMs plays. Swiping to the
       next one, or tapping another reel from there, shows the **Blocked**
-      screen; **Go back** returns to the reel.
+      screen; **Go back** returns to the reel. Also after watching it for a
+      while (10 seconds or more), swiping on is still blocked.
 
 ## Should still work
 - [ ] **DMs:** read, reply, send a photo.

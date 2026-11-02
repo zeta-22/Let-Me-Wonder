@@ -146,6 +146,18 @@
           <div><a href="/friend_one/">friend_one</a><button>Tagga</button></div></div>
         <div role="button" data-fx="create-share" style="position:fixed;right:8px;bottom:70px">Condividi</div>
       </div></main>`,
+    // A reel opened from a DM, as Instagram can show it once its viewer has loaded: a
+    // full-screen list you swipe (scroll-snap) on to other reels, and the address stays put.
+    reelfeed: (id) => `
+      <main role="main"><div data-fx="reel-list" style="height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory">
+        ${[id, 'NEXT1', 'NEXT2']
+          .map(
+            (r, i) => `<div data-fx="reel-item-${i}" style="height:100vh;scroll-snap-align:start">
+              <video muted playsinline data-fx="reel-video-${i}" style="display:block;width:100%;height:90vh;background:#222"></video>
+              <a href="/friend_${i}/reel/${r}/">reel ${r}</a></div>`,
+          )
+          .join('')}
+      </div></main>`,
     other: () => `<main role="main"><p data-fx="other">Some other page</p></main>`,
   };
 
@@ -270,7 +282,7 @@
     if (path === '/explore/') return views.explore();
     if (path.startsWith('/explore/search/')) return views.search();
     if (path === '/reels/') return views.reels();
-    if ((m = path.match(/^\/reel\/([^/]+)\/$/))) return views.reel(m[1]);
+    if ((m = path.match(/^\/reel\/([^/]+)\/$/))) return params.get('fake') === 'reelfeed' ? views.reelfeed(m[1]) : views.reel(m[1]);
     if (path === '/direct/inbox/') return views.inbox();
     if (path.startsWith('/direct/t/')) return views.thread();
     if (path === '/accounts/login/') return views.login();

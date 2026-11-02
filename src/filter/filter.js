@@ -14,7 +14,7 @@
 //      stays exactly Instagram's: its list, which keeps only the posts near the
 //      screen, and its loading of more posts work as if the filter weren't there.
 
-import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, STORIES } from './rules.js';
+import { TOGGLES, CSS_RULES, LABELS, LABEL_RULES, LABEL_SKIP_PAGES, STRUCTURE, RULES_VERSION, STORIES, REEL_SWIPE } from './rules.js';
 import { decide, pageOf } from './routes.js';
 import { withSaved } from './settings.js';
 import { buildReport, outlineOf } from './report.js';
@@ -36,6 +36,8 @@ const STORY_RETRY_MS = 1500; // a story ad still showing this long after a skip:
 const STORY_MAX_TRIES = 3;
 const STORY_WAY_MS = 3000; // how long your last tap or swipe in stories says which way you're going
 const SWIPE_PX = 50;
+const REEL_PAGES = ['reel', 'post']; // a reel's own page (opened from a DM, a profile, the feed)
+const reelRe = new RegExp(REEL_SWIPE.path);
 
 // A covered post keeps its size, so the feed keeps Instagram's own layout. Everything in
 // it is invisible and can't be tapped, and a small grey label says what was there. With
@@ -245,7 +247,10 @@ function start() {
     }
     if (url.origin !== location.origin) return;
     const verdict = decide(url.pathname, allowedPath, settings, { tapped: true });
-    if (verdict.action === 'allow') return;
+    if (verdict.action === 'allow') {
+      reelWatch = null; // you chose what to open: that's the reel to watch now
+      return;
+    }
     e.preventDefault();
     e.stopImmediatePropagation();
     if (verdict.action === 'redirect') leaveFor(verdict.to, verdict.toggle, false);
@@ -292,9 +297,10 @@ function start() {
     );
   }
 
-  function showBlocked(toggle, navigated) {
+  // `back`, if given, is how Go back returns (e.g. scrolling back to the reel you opened).
+  function showBlocked(toggle, navigated, back) {
     log.add(`Blocked screen: ${toggle}`);
-    blocked = { toggle, navigated };
+    blocked = { toggle, navigated, back };
     applyRootState();
     pauseMedia();
     ui.showBlocked(messageFor(toggle), goBack);
@@ -308,7 +314,11 @@ function start() {
   }
 
   function goBack() {
-    if (!blocked || !blocked.navigated) {
+    if (blocked && blocked.back) {
+      const back = blocked.back;
+      hideBlocked();
+      back();
+    } else if (!blocked || !blocked.navigated) {
       hideBlocked(); // the tap was stopped before leaving the page: just close
     } else if (navCount > 0 || arrivedFrom) {
       history.back(); // the Blocked screen closes once the previous page is back
@@ -699,6 +709,91 @@ function start() {
     }, 1500);
   }
 
+  // --- one reel at a time ------------------------------------------------------------
+  // On a reel's own page, once Instagram's viewer has loaded, swiping can scroll on to other
+  // reels without the address changing, so the address check misses it. The filter
+  // remembers the full-screen video you opened and, when another one takes its place (the
+  // page scrolled to it, yours left the screen, or it belongs to another reel), pauses it
+  // and shows the Blocked screen; Go back scrolls back to your reel. Instagram drawing your
+  // reel again isn't a swipe, and a link you tap yourself starts over with what you opened.
+  let reelWatch = null; // { video, scroller, top, id, path }: the reel you opened
+
+  // The video filling most of the screen, if any (at least half the screen tall, mostly in view).
+  function mainVideo() {
+    let best = null;
+    let bestShown = 0;
+    for (const video of document.querySelectorAll('video')) {
+      const r = video.getBoundingClientRect();
+      if (r.height < window.innerHeight * 0.5) continue;
+      const shown = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+      if (shown < Math.min(r.height, window.innerHeight) * 0.6) continue;
+      if (shown > bestShown) {
+        best = video;
+        bestShown = shown;
+      }
+    }
+    return best;
+  }
+
+  function scrollerOf(el) {
+    for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight + 10) return n;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  // The reel a video belongs to: a reel link in the part of the page around it alone.
+  function reelIdNear(video) {
+    let item = video;
+    while (item.parentElement && item.parentElement !== document.body && item.parentElement.querySelectorAll('video').length === 1) {
+      item = item.parentElement;
+    }
+    for (const a of item.querySelectorAll('a[href]')) {
+      try {
+        const m = reelRe.exec(new URL(a.getAttribute('href'), location.href).pathname);
+        if (m) return m[1];
+      } catch (e) {
+        /* not an address */
+      }
+    }
+    return null;
+  }
+
+  function offScreen(el) {
+    const r = el.getBoundingClientRect();
+    return r.bottom < window.innerHeight * 0.25 || r.top > window.innerHeight * 0.75;
+  }
+
+  function watchReel() {
+    if (!REEL_PAGES.includes(page)) reelWatch = null;
+    if (!reelWatch && (!REEL_PAGES.includes(page) || !settings.reelSwipe)) return;
+    if (blocked || document.hidden || !settings.reelSwipe) return;
+    const video = mainVideo();
+    if (!video) return;
+    if (!reelWatch) {
+      const scroller = scrollerOf(video);
+      const fromPath = reelRe.exec(location.pathname);
+      reelWatch = { video, scroller, top: scroller.scrollTop, id: reelIdNear(video) || (fromPath && fromPath[1]), path: location.pathname };
+      log.add('reel page: watching the reel you opened');
+      return;
+    }
+    if (video === reelWatch.video) return;
+    const w = reelWatch;
+    const otherId = reelIdNear(video);
+    const moved = w.scroller.isConnected && Math.abs(w.scroller.scrollTop - w.top) > window.innerHeight * 0.4;
+    const yoursGone = w.video.isConnected && offScreen(w.video);
+    if (moved || yoursGone || (otherId && w.id && otherId !== w.id)) {
+      log.add('reel page: another reel came up, blocked');
+      showBlocked(REEL_SWIPE.toggle, false, () => {
+        if (w.scroller.isConnected) w.scroller.scrollTo({ top: w.top });
+        else if (w.video.isConnected) w.video.scrollIntoView({ block: 'center' });
+        else location.replace(w.path);
+      });
+    } else {
+      w.video = video; // your reel, drawn again by Instagram
+    }
+  }
+
   // --- the feed, for the report's timeline ---------------------------------------
   // Only looks: the page's height and the padding of the list holding the posts.
   function watchFeed() {
@@ -805,6 +900,7 @@ function start() {
   setInterval(checkPath, 300);
   setInterval(watchFeed, 500);
   setInterval(checkStoryAds, 400); // an ad still showing after a skip, or the next one
+  setInterval(watchReel, 300); // another reel taking the place of the one you opened
   setInterval(fixViewport, 500); // in case Instagram changes its viewport tag without adding nodes
   new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });
 
