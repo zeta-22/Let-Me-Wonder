@@ -4,7 +4,7 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.11.02e';
+export const RULES_VERSION = '2026.11.02f';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.

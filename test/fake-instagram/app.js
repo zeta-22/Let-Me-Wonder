@@ -171,7 +171,10 @@
             (r, i) => `<div data-fx="reel-item-${i}" style="height:100vh;scroll-snap-align:start;position:relative">
               <video muted playsinline data-fx="reel-video-${i}" style="display:block;width:100%;height:90vh;background:#222"></video>
               <a href="/friend_${i}/reel/${r}/">reel ${r}</a>
-              <button data-fx="reel-comments-${i}" style="position:absolute;right:8px;bottom:12vh">Commenti</button></div>`,
+              <div role="button" aria-label="Mi piace" data-fx="reel-like-${i}" style="position:absolute;right:8px;bottom:40vh;width:44px;height:44px">♡</div>
+              <div role="button" aria-label="Condividi" data-fx="reel-share-${i}" style="position:absolute;right:8px;bottom:30vh;width:44px;height:44px">➤</div>
+              <button data-fx="reel-comments-${i}" style="position:absolute;right:8px;bottom:12vh">Commenti</button>
+              <div data-fx="reel-caption-${i}" style="position:absolute;left:8px;bottom:14vh;max-width:60%;color:#fff">a caption… <span role="button" data-fx="reel-more-${i}" style="display:inline-block;padding:8px">altro</span></div></div>`,
           )
           .join('')}
       </div>`;
@@ -419,13 +422,35 @@
       if (pointerDown !== null && pointerDown - e.clientY > 60) next();
       pointerDown = null;
     });
+    window.fakeLikes = 0;
+    window.fakeDoubleTaps = 0;
+    list.addEventListener('dblclick', (e) => e.target.tagName === 'VIDEO' && window.fakeDoubleTaps++);
     list.addEventListener('click', (e) => {
+      const fx = (e.target.closest('[data-fx]') || e.target).dataset.fx || '';
       if (e.target.tagName === 'VIDEO') window.fakeTaps++;
-      if (!e.target.dataset.fx || !e.target.dataset.fx.startsWith('reel-comments')) return;
-      // Comments open in a sheet over the reel, where you scroll the comments.
+      if (fx.startsWith('reel-like')) window.fakeLikes++;
+      if (fx.startsWith('reel-more')) window.fakeCaptionOpen = true;
+      if (fx.startsWith('reel-share')) {
+        // The people to send it to, in a sheet you scroll; "Invia" sends and closes it.
+        document.body.insertAdjacentHTML(
+          'beforeend',
+          `<div role="dialog" data-fx="share-sheet" style="position:fixed;left:0;right:0;bottom:0;height:50vh;overflow-y:auto;background:#fff">
+            ${Array.from({ length: 20 }, (_, i) => `<div style="height:56px">contact ${i} <button data-fx="share-send-${i}">Invia</button></div>`).join('')}</div>`,
+        );
+        const sheet = document.querySelector('[data-fx="share-sheet"]');
+        sheet.addEventListener('click', (ev) => {
+          const send = ev.target.closest('button');
+          if (!send) return;
+          window.fakeSent = send.dataset.fx;
+          sheet.remove();
+        });
+      }
+      if (!fx.startsWith('reel-comments')) return;
+      // Comments open in a sheet over the reel, where you scroll the comments and write one.
       document.body.insertAdjacentHTML(
         'beforeend',
         `<div role="dialog" data-fx="comments-sheet" style="position:fixed;left:0;right:0;bottom:0;height:60vh;overflow-y:scroll;background:#fff">
+          <textarea data-fx="comment-box" placeholder="Aggiungi un commento..." style="display:block;width:90%;height:40px"></textarea>
           ${Array.from({ length: 30 }, (_, i) => `<p style="height:60px">comment ${i}</p>`).join('')}</div>`,
       );
     });

@@ -1,6 +1,6 @@
 // The filter's own screens: the Blocked screen, the small settings button, the settings
 // panel (the panel is for Safari; the Android app has its own) and the clear shield over
-// a reel, with its own buttons.
+// a reel.
 // Everything lives in one shadow root, so Instagram's styles can't change it.
 
 import uiCss from './ui.css';
@@ -11,14 +11,6 @@ const LEAF_ICON =
 const SLIDERS_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">' +
   '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>';
-
-const icon = (paths) =>
-  `<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
-const PLAY_ICON = icon('<path d="M8 5v14l11-7z"/>');
-const PAUSE_ICON = icon('<path d="M7 5h3v14H7zM14 5h3v14h-3z" stroke="none"/>');
-const SOUND_ON_ICON = icon('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" fill="none"/>');
-const SOUND_OFF_ICON = icon('<path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9l6 6M22 9l-6 6" fill="none"/>');
-const CLOSE_ICON = icon('<path d="M6 6l12 12M18 6L6 18" fill="none"/>');
 
 function el(tag, attrs, children) {
   const node = document.createElement(tag);
@@ -33,8 +25,7 @@ function el(tag, attrs, children) {
 
 // options: { toggles, version, rulesVersion, getSettings, onChange(partial), getReport(),
 //            tryCode(code) -> { ok, wait } (the lock on the switches, see lock.js),
-//            onGear() (optional: what the settings button does instead of opening the panel),
-//            onShield(part) (a tap on the reel's shield: 'play', 'sound', 'close' or 'shield') }
+//            onGear() (optional: what the settings button does instead of opening the panel) }
 export function createUi(options) {
   const host = el('div', { id: 'lmw-ui' });
   host.style.cssText = 'all: initial; position: fixed; inset: 0; z-index: 2147483647; pointer-events: none;';
@@ -56,25 +47,9 @@ export function createUi(options) {
   backButton.addEventListener('click', () => onBack && onBack());
 
   // The shield over a reel: clear, over the whole screen, so every touch lands on it and
-  // none on Instagram. Its buttons: play/pause, sound, close. A tap anywhere else is
-  // play/pause. The filter handles your taps on it before anything else sees them (see
-  // guard() in filter.js); this listener is for clicks made by code.
-  const playButton = el('button', { class: 'reel-button', type: 'button', 'data-part': 'play', 'aria-label': 'Pause', html: PAUSE_ICON });
-  const soundButton = el('button', { class: 'reel-button', type: 'button', 'data-part': 'sound', 'aria-label': 'Sound on', html: SOUND_OFF_ICON });
-  const closeReelButton = el('button', { class: 'reel-button', type: 'button', 'data-part': 'close', 'aria-label': 'Close the reel', html: CLOSE_ICON });
-  const shield = el('div', { class: 'shield', 'data-part': 'shield', hidden: '' }, [
-    el('div', { class: 'reel-bar', role: 'toolbar', 'aria-label': 'This reel only: no swiping' }, [playButton, soundButton, closeReelButton]),
-  ]);
-  function shieldPart(node) {
-    const start = node && node.nodeType !== 1 ? node.parentElement : node;
-    const part = start && start.closest ? start.closest('[data-part]') : null;
-    return part && shield.contains(part) ? part.dataset.part : null;
-  }
-  shield.addEventListener('click', (e) => {
-    const part = shieldPart(e.target);
-    if (part && options.onShield) options.onShield(part);
-  });
-  let shieldState = {};
+  // none on Instagram. The filter decides what a touch on it does (see onShield() in
+  // filter.js): a tap is passed on to Instagram, a swipe never.
+  const shield = el('div', { class: 'shield', hidden: '' });
 
   // Settings button
   const gear = el('button', { class: 'gear', type: 'button', 'aria-label': 'Let Me Wonder settings', html: SLIDERS_ICON, hidden: '' });
@@ -218,17 +193,10 @@ export function createUi(options) {
     setShield(on) {
       shield.hidden = !on;
     },
-    // { playing, sound }: what the shield's buttons show.
-    setShieldState(state) {
-      if (state.playing === shieldState.playing && state.sound === shieldState.sound) return;
-      shieldState = state;
-      playButton.innerHTML = state.playing ? PAUSE_ICON : PLAY_ICON;
-      playButton.setAttribute('aria-label', state.playing ? 'Pause' : 'Play');
-      soundButton.innerHTML = state.sound ? SOUND_ON_ICON : SOUND_OFF_ICON;
-      soundButton.setAttribute('aria-label', state.sound ? 'Sound off' : 'Sound on');
+    // Whether a node (from an event's composed path) is the shield.
+    isShield(node) {
+      return !!node && (node === shield || shield.contains(node));
     },
-    // Which part of the shield a node is: 'play', 'sound', 'close', 'shield', or null.
-    shieldPart,
     openPanel,
   };
 }

@@ -44,12 +44,15 @@ the moment it starts loading, and works in five layers:
    half as tall, since Instagram can show a reel over a chat, open its full
    viewer over it a moment later, or change the address), a clear **shield** of
    the filter's own lies over the whole screen. Every touch lands on it, so
-   Instagram gets none: no swipe, no long press, no wheel, no keys. On a reel,
-   swiping simply doesn't exist, however long you've watched, and nothing can
-   open the reply box (the keyboard); a text box Instagram focuses by itself is
-   closed at once. The shield has three buttons: play/pause (a tap anywhere does
-   it too), sound, and close (back to the chat). Instagram's own buttons on the
-   reel (like, comments, reply) can't be reached there. A video sent in a chat
+   Instagram never sees a finger move on a reel: on a reel, swiping to scroll
+   simply doesn't exist, however long you've watched, and no swipe or long press
+   can open the reply box (the keyboard). A **tap** is passed on to whatever of
+   Instagram's is under your finger, so all of a reel's buttons work: like
+   (a double tap too), comments, share, "more", the description, the name, the
+   sound, writing a comment (the keyboard opens because you tapped the box). A
+   swipe moves only a list that holds no video: the comments, the people to send
+   it to, a long description. A text box Instagram focuses without your tap is
+   closed at once. A video sent in a chat
    is narrower than the screen, so the chat itself is never shielded. As a
    backstop, if another full-screen video still takes the reel's place, it's
    paused and blocked, and **Go back** scrolls back to your reel. Home is Instagram's own home page, with the
@@ -188,7 +191,7 @@ Chrome (needs Playwright with Chromium, preinstalled in the cloud environment).
 traffic from cloud servers and shows little without an account, so that check
 confirms that the filter starts without errors, leaves the login form alone, and
 holds a reel in Instagram's real reel viewer (which opens logged out) against real
-finger swipes, with the shield over it and a tap pausing the reel.
+finger swipes, with the shield over it and a tap still reaching Instagram (the sound).
 
 The Android app is checked in the cloud with `npx expo-doctor` and
 `npx expo export --platform android` (does the app's code compile). The installable
