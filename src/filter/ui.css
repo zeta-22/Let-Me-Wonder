@@ -1,4 +1,4 @@
-/* Let Me Wonder: look of the Blocked screen, settings button and settings panel.
+/* Let Me Wonder: look of the Blocked screen, settings button, settings panel and the shield over a reel.
    Lives in its own shadow root, so Instagram's styles can't touch it. */
 
 :host {
@@ -23,7 +23,7 @@
 }
 
 /* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */
-.blocked, .gear, .backdrop {
+.blocked, .gear, .backdrop, .shield {
   font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   color: var(--fg);
 }
@@ -55,6 +55,19 @@ button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-c
   font-weight: 600;
 }
 
+/* The clear shield over a reel: every touch lands here, none on Instagram (taps are
+   passed on by the filter). No scrolling, zooming, selecting or long-press menu on it. */
+.shield {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
 /* Small settings button (Safari only) */
 .gear {
   position: fixed;

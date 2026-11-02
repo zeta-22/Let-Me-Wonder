@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.4.4
+// @version      0.4.6
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.11.02d";
+  var RULES_VERSION = "2026.11.02f";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
@@ -559,7 +559,7 @@
   }
 
   // src/filter/ui.css
-  var ui_default = "/* Let Me Wonder: look of the Blocked screen, settings button and settings panel.\n   Lives in its own shadow root, so Instagram's styles can't touch it. */\n\n:host {\n  --bg: #ffffff;\n  --fg: #111111;\n  --muted: #6b6b6b;\n  --line: #e4e4e4;\n  --accent: #2f6f4f;\n  --accent-fg: #ffffff;\n  --shade: rgba(0, 0, 0, 0.35);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --bg: #121212;\n    --fg: #f2f2f2;\n    --muted: #a0a0a0;\n    --line: #2c2c2c;\n    --accent: #6fbf94;\n    --accent-fg: #0b1f14;\n    --shade: rgba(0, 0, 0, 0.6);\n  }\n}\n\n/* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */\n.blocked, .gear, .backdrop {\n  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  color: var(--fg);\n}\n\n[hidden] { display: none !important; }\nbutton { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }\n\n/* Blocked screen */\n.blocked {\n  position: fixed;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  background: var(--bg);\n  pointer-events: auto;\n}\n.blocked .card { max-width: 340px; text-align: center; }\n.blocked .leaf { width: 44px; height: 44px; color: var(--accent); }\n.blocked h1 { font-size: 21px; margin: 12px 0 8px; }\n.blocked p { color: var(--muted); margin: 0 0 22px; }\n.primary {\n  border: 0;\n  border-radius: 10px;\n  padding: 12px 26px;\n  background: var(--accent);\n  color: var(--accent-fg);\n  font-weight: 600;\n}\n\n/* Small settings button (Safari only) */\n.gear {\n  position: fixed;\n  right: 10px;\n  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: 1px solid var(--line);\n  background: var(--bg);\n  color: var(--muted);\n  opacity: 0.55;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  pointer-events: auto;\n}\n\n.gear[data-place='side'] {\n  top: 40%;\n  bottom: auto;\n}\n.gear svg { width: 18px; height: 18px; }\n\n/* Settings panel */\n.backdrop {\n  position: fixed;\n  inset: 0;\n  background: var(--shade);\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  pointer-events: auto;\n}\n.sheet {\n  width: 100%;\n  max-width: 480px;\n  max-height: 88vh;\n  overflow-y: auto;\n  background: var(--bg);\n  border-radius: 16px 16px 0 0;\n  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);\n}\n.sheet-head { display: flex; align-items: center; justify-content: space-between; }\n.sheet h2 { font-size: 18px; margin: 0; }\n.close { border: 0; background: none; font-size: 22px; padding: 4px 8px; color: var(--muted); }\n.toggles { list-style: none; margin: 10px 0; padding: 0; }\n.toggles li { border-bottom: 1px solid var(--line); }\n.toggles label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }\n.toggles input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }\n.secondary {\n  width: 100%;\n  margin-top: 14px;\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  padding: 11px;\n  background: none;\n}\n.status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }\n.section { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 18px 0 0; }\n.lock { margin: 6px 0 0; }\n.lock-msg { margin: 0 0 8px; color: var(--muted); font-size: 14px; }\n.lock-entry { display: flex; gap: 8px; }\n.lock-entry[hidden] { display: none; }\n.code { flex: 1; min-width: 0; font-size: 16px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); }\n.unlock { width: auto; margin: 0; padding: 0 16px; }\n.toggles input:disabled { opacity: 0.45; }\n.manual { width: 100%; height: 120px; margin-top: 8px; font: 12px/1.3 ui-monospace, Menlo, monospace; }\n.foot { color: var(--muted); font-size: 12px; margin: 12px 0 0; }\n";
+  var ui_default = "/* Let Me Wonder: look of the Blocked screen, settings button, settings panel and the shield over a reel.\n   Lives in its own shadow root, so Instagram's styles can't touch it. */\n\n:host {\n  --bg: #ffffff;\n  --fg: #111111;\n  --muted: #6b6b6b;\n  --line: #e4e4e4;\n  --accent: #2f6f4f;\n  --accent-fg: #ffffff;\n  --shade: rgba(0, 0, 0, 0.35);\n}\n@media (prefers-color-scheme: dark) {\n  :host {\n    --bg: #121212;\n    --fg: #f2f2f2;\n    --muted: #a0a0a0;\n    --line: #2c2c2c;\n    --accent: #6fbf94;\n    --accent-fg: #0b1f14;\n    --shade: rgba(0, 0, 0, 0.6);\n  }\n}\n\n/* Set on each top-level piece: the host element itself is reset to keep Instagram's styles out. */\n.blocked, .gear, .backdrop, .shield {\n  font: 15px/1.4 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;\n  color: var(--fg);\n}\n\n[hidden] { display: none !important; }\nbutton { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }\n\n/* Blocked screen */\n.blocked {\n  position: fixed;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 24px;\n  background: var(--bg);\n  pointer-events: auto;\n}\n.blocked .card { max-width: 340px; text-align: center; }\n.blocked .leaf { width: 44px; height: 44px; color: var(--accent); }\n.blocked h1 { font-size: 21px; margin: 12px 0 8px; }\n.blocked p { color: var(--muted); margin: 0 0 22px; }\n.primary {\n  border: 0;\n  border-radius: 10px;\n  padding: 12px 26px;\n  background: var(--accent);\n  color: var(--accent-fg);\n  font-weight: 600;\n}\n\n/* The clear shield over a reel: every touch lands here, none on Instagram (taps are\n   passed on by the filter). No scrolling, zooming, selecting or long-press menu on it. */\n.shield {\n  position: fixed;\n  inset: 0;\n  background: transparent;\n  pointer-events: auto;\n  touch-action: none;\n  -webkit-user-select: none;\n  user-select: none;\n  -webkit-touch-callout: none;\n  -webkit-tap-highlight-color: transparent;\n}\n/* Small settings button (Safari only) */\n.gear {\n  position: fixed;\n  right: 10px;\n  bottom: calc(env(safe-area-inset-bottom, 0px) + 64px);\n  width: 34px;\n  height: 34px;\n  border-radius: 50%;\n  border: 1px solid var(--line);\n  background: var(--bg);\n  color: var(--muted);\n  opacity: 0.55;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 0;\n  pointer-events: auto;\n}\n\n.gear[data-place='side'] {\n  top: 40%;\n  bottom: auto;\n}\n.gear svg { width: 18px; height: 18px; }\n\n/* Settings panel */\n.backdrop {\n  position: fixed;\n  inset: 0;\n  background: var(--shade);\n  display: flex;\n  align-items: flex-end;\n  justify-content: center;\n  pointer-events: auto;\n}\n.sheet {\n  width: 100%;\n  max-width: 480px;\n  max-height: 88vh;\n  overflow-y: auto;\n  background: var(--bg);\n  border-radius: 16px 16px 0 0;\n  padding: 16px 18px calc(env(safe-area-inset-bottom, 0px) + 18px);\n}\n.sheet-head { display: flex; align-items: center; justify-content: space-between; }\n.sheet h2 { font-size: 18px; margin: 0; }\n.close { border: 0; background: none; font-size: 22px; padding: 4px 8px; color: var(--muted); }\n.toggles { list-style: none; margin: 10px 0; padding: 0; }\n.toggles li { border-bottom: 1px solid var(--line); }\n.toggles label { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }\n.toggles input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }\n.secondary {\n  width: 100%;\n  margin-top: 14px;\n  border: 1px solid var(--line);\n  border-radius: 10px;\n  padding: 11px;\n  background: none;\n}\n.status { min-height: 1.4em; margin: 10px 0 0; color: var(--accent); font-size: 14px; }\n.section { font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin: 18px 0 0; }\n.lock { margin: 6px 0 0; }\n.lock-msg { margin: 0 0 8px; color: var(--muted); font-size: 14px; }\n.lock-entry { display: flex; gap: 8px; }\n.lock-entry[hidden] { display: none; }\n.code { flex: 1; min-width: 0; font-size: 16px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); }\n.unlock { width: auto; margin: 0; padding: 0 16px; }\n.toggles input:disabled { opacity: 0.45; }\n.manual { width: 100%; height: 120px; margin-top: 8px; font: 12px/1.3 ui-monospace, Menlo, monospace; }\n.foot { color: var(--muted); font-size: 12px; margin: 12px 0 0; }\n";
 
   // src/filter/ui.js
   var LEAF_ICON = '<svg class="leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19c0-8 5-13 14-14 0 9-5 14-13 14z"/><path d="M5 19l7-7"/></svg>';
@@ -591,6 +591,7 @@
     ]);
     let onBack = null;
     backButton.addEventListener("click", () => onBack && onBack());
+    const shield = el("div", { class: "shield", hidden: "" });
     const gear = el("button", { class: "gear", type: "button", "aria-label": "Let Me Wonder settings", html: SLIDERS_ICON, hidden: "" });
     gear.addEventListener("click", () => options.onGear ? options.onGear() : openPanel());
     const inputs = {};
@@ -663,7 +664,7 @@
     });
     closeButton.addEventListener("click", () => closePanel());
     reportButton.addEventListener("click", () => copyReport());
-    shadow.append(blocked, gear, backdrop);
+    shadow.append(shield, blocked, gear, backdrop);
     let gearWanted = false;
     function refreshGear() {
       gear.hidden = !gearWanted || !blocked.hidden || !backdrop.hidden;
@@ -721,6 +722,13 @@
         if (place) gear.dataset.place = place;
         else delete gear.dataset.place;
       },
+      setShield(on) {
+        shield.hidden = !on;
+      },
+      // Whether a node (from an event's composed path) is the shield.
+      isShield(node) {
+        return !!node && (node === shield || shield.contains(node));
+      },
       openPanel
     };
   }
@@ -729,7 +737,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.4.4" : "dev";
+  var VERSION = true ? "0.4.6" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -794,6 +802,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     const root = document.documentElement;
     let page = pageOf(location.pathname);
     let lastPath = null;
+    let pathSince = Date.now();
     const arrivedFrom = sessionTake(FROM_PATH_KEY);
     let allowedPath = arrivedFrom;
     let navCount = 0;
@@ -855,7 +864,8 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       if (blocked) root.setAttribute("data-lmw-blocked", blocked.toggle);
       else root.removeAttribute("data-lmw-blocked");
       ui.setGearVisible((host === "app" || settings.showGear) && !NO_GEAR_PAGES.includes(page));
-      ui.setGearPlace(page === "stories" ? "side" : null);
+      updateShield();
+      ui.setGearPlace(page === "stories" || shieldOn ? "side" : null);
     }
     function pageLabel() {
       const variant = page === "home" && new URLSearchParams(location.search).get("variant");
@@ -881,6 +891,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       }
       if (lastPath !== null) navCount++;
       lastPath = path;
+      pathSince = Date.now();
       const next = pageOf(path);
       if (next !== page) keepCovered(page);
       page = next;
@@ -1281,14 +1292,31 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       }, 1500);
     }
     let reelWatch = null;
-    let gesture = null;
-    let callingOff = false;
+    let shieldOn = false;
+    let reelSeen = { at: 0, path: null };
+    let touch = null;
+    let glideFrame = 0;
+    let tappedAt = 0;
+    let typingIn = null;
     let swipeLoggedAt = 0;
+    let focusLoggedAt = 0;
     let reelNoted = false;
     const TAP_PX = 10;
-    function holdingReel() {
-      if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page)) return false;
-      return page === "reel" || !!fullScreenVideo() || !!(reelWatch && reelWatch.video.isConnected);
+    const TAP_MS = 500;
+    const SHIELD_GRACE_MS = 1500;
+    const TAP_FOCUS_MS = 1500;
+    function reelOnScreen() {
+      if (!settings.reelSwipe || blocked || FREE_SWIPE_PAGES.includes(page)) return false;
+      const now = Date.now();
+      if (page === "reel" || reelVideo()) {
+        if (now - pathSince > 500) reelSeen = { at: now, path: location.pathname };
+        return true;
+      }
+      return shieldOn && reelSeen.path === location.pathname && now - reelSeen.at < SHIELD_GRACE_MS;
+    }
+    function reelVideo() {
+      const video = mainVideo();
+      return video && video.getBoundingClientRect().width >= window.innerWidth * 0.9 ? video : null;
     }
     function fullScreenVideo() {
       const video = mainVideo();
@@ -1296,27 +1324,214 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       const r = video.getBoundingClientRect();
       return r.height >= window.innerHeight * 0.7 && r.width >= window.innerWidth * 0.8 ? video : null;
     }
-    function freeToMove(target) {
-      if (!target || !target.closest) return true;
-      if (target.closest("#lmw-ui")) return true;
-      const sheet = target.closest('[role="dialog"]');
-      if (!sheet) return false;
-      const video = mainVideo() || reelWatch && reelWatch.video;
-      if (video && sheet.contains(video)) return false;
-      for (let n = target; n && n !== sheet.parentElement; n = n.parentElement) {
-        if (/(auto|scroll)/.test(getComputedStyle(n).overflowY) && n.scrollHeight > n.clientHeight + 4) return true;
+    function updateShield() {
+      const on = reelOnScreen();
+      if (on !== shieldOn) {
+        shieldOn = on;
+        touch = null;
+        stopGlide();
+        ui.setShield(on);
+        ui.setGearPlace(page === "stories" || on ? "side" : null);
+        log.add(on ? `reel on ${pageLabel()}: shield up, Instagram sees no finger move` : "reel: shield down");
+        if (on && closeKeyboard()) log.add("reel: a text box was open, closed it");
       }
-      return false;
+      return on;
     }
-    function startGesture(x, y, target, pointerId, fingers) {
-      if (gesture && gesture.target === target && Date.now() - gesture.at < 400 && !gesture.ended) {
-        if (fingers > 1) gesture.moved = TAP_PX + 1;
-        if (pointerId != null) gesture.pointerId = pointerId;
+    function editable(node) {
+      return !!node && node.nodeType === 1 && (node.matches("input, textarea, select") || node.isContentEditable);
+    }
+    function closeKeyboard() {
+      const focused = document.activeElement;
+      if (!editable(focused) || isOurs(focused) || focused === typingIn) return false;
+      focused.blur();
+      return true;
+    }
+    function elementBelow(x, y) {
+      for (const el2 of document.elementsFromPoint(x, y)) if (!isOurs(el2)) return el2;
+      return null;
+    }
+    function freeScroller(start2, axis) {
+      for (let n = start2; n && n !== document.body && n !== root; n = n.parentElement) {
+        const style2 = getComputedStyle(n);
+        const over = axis === "y" ? style2.overflowY : style2.overflowX;
+        const room = axis === "y" ? n.scrollHeight > n.clientHeight + 4 : n.scrollWidth > n.clientWidth + 4;
+        if (/(auto|scroll)/.test(over) && room) return n.querySelector("video") ? null : n;
+      }
+      return null;
+    }
+    function stopGlide() {
+      if (glideFrame) cancelAnimationFrame(glideFrame);
+      glideFrame = 0;
+    }
+    function glide(list, axis, speed) {
+      let last = performance.now();
+      const step = (now) => {
+        const dt = Math.min(now - last, 40);
+        last = now;
+        if (axis === "y") list.scrollTop += speed * dt;
+        else list.scrollLeft += speed * dt;
+        speed *= Math.pow(0.996, dt);
+        glideFrame = Math.abs(speed) > 0.02 ? requestAnimationFrame(step) : 0;
+      };
+      glideFrame = requestAnimationFrame(step);
+    }
+    function fire(target, Kind, type, init) {
+      let event;
+      try {
+        event = new Kind(type, init);
+      } catch (e) {
+        return true;
+      }
+      return target.dispatchEvent(event);
+    }
+    function passTap(x, y, count) {
+      const target = elementBelow(x, y);
+      if (!target) return;
+      tappedAt = Date.now();
+      const at = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y };
+      const finger = { ...at, pointerId: 1, pointerType: "touch", isPrimary: true, width: 1, height: 1 };
+      let point = null;
+      try {
+        point = new Touch({ identifier: 1, target, clientX: x, clientY: y, screenX: x, screenY: y, pageX: x + window.scrollX, pageY: y + window.scrollY });
+      } catch (e) {
+      }
+      const down = fire(target, PointerEvent, "pointerdown", { ...finger, button: 0, buttons: 1, pressure: 0.5 });
+      let ok = !point || fire(target, TouchEvent, "touchstart", { ...at, touches: [point], targetTouches: [point], changedTouches: [point] });
+      fire(target, PointerEvent, "pointerup", { ...finger, button: 0, buttons: 0, pressure: 0 });
+      if (point) ok = fire(target, TouchEvent, "touchend", { ...at, touches: [], targetTouches: [], changedTouches: [point] }) && ok;
+      if (!ok) return;
+      const mouse = { ...at, button: 0, detail: count || 1 };
+      const pressed = !down || fire(target, MouseEvent, "mousedown", { ...mouse, buttons: 1 });
+      const box = target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+      if (pressed && box && !box.disabled) {
+        typingIn = box;
+        box.focus();
+      }
+      if (down) fire(target, MouseEvent, "mouseup", mouse);
+      fire(target, MouseEvent, "click", mouse);
+    }
+    function onShield(e) {
+      const { type } = e;
+      if (type === "pointerdown") {
+        stopGlide();
+        touch = {
+          x: e.clientX,
+          y: e.clientY,
+          lastX: e.clientX,
+          lastY: e.clientY,
+          at: Date.now(),
+          held: 0,
+          moved: 0,
+          below: elementBelow(e.clientX, e.clientY),
+          axis: null,
+          list: null,
+          trail: []
+        };
+      } else if (type === "pointermove" && touch) {
+        const t = touch;
+        t.moved = Math.max(t.moved, Math.abs(e.clientX - t.x), Math.abs(e.clientY - t.y));
+        if (!t.axis && t.moved > TAP_PX) {
+          t.axis = Math.abs(e.clientY - t.y) >= Math.abs(e.clientX - t.x) ? "y" : "x";
+          t.list = freeScroller(t.below, t.axis);
+          if (!t.list && Date.now() - swipeLoggedAt > 5e3) {
+            swipeLoggedAt = Date.now();
+            log.add("reel: a swipe was stopped, Instagram never saw it");
+          }
+        }
+        if (t.list) {
+          if (t.axis === "y") t.list.scrollTop -= e.clientY - t.lastY;
+          else t.list.scrollLeft -= e.clientX - t.lastX;
+          t.trail.push([performance.now(), t.axis === "y" ? e.clientY : e.clientX]);
+          if (t.trail.length > 6) t.trail.shift();
+        }
+        t.lastX = e.clientX;
+        t.lastY = e.clientY;
+      } else if (type === "pointerup" && touch) {
+        const t = touch;
+        t.held = Date.now() - t.at;
+        if (t.list && t.trail.length > 1) {
+          const [t0, p0] = t.trail[0];
+          const [t1, p1] = t.trail[t.trail.length - 1];
+          const speed = t1 > t0 && performance.now() - t1 < 100 ? -(p1 - p0) / (t1 - t0) : 0;
+          if (Math.abs(speed) > 0.1) glide(t.list, t.axis, Math.max(-4, Math.min(4, speed)));
+        }
+      } else if (type === "pointercancel") {
+        touch = null;
+      } else if (type === "click") {
+        if (!touch || touch.moved <= TAP_PX && touch.held < TAP_MS) passTap(e.clientX, e.clientY, e.detail);
+        else if (touch.held >= TAP_MS) log.add("reel: a long press was stopped");
+        touch = null;
+      } else if (type === "dblclick") {
+        const target = elementBelow(e.clientX, e.clientY);
+        if (target) fire(target, MouseEvent, "dblclick", { bubbles: true, cancelable: true, composed: true, view: window, clientX: e.clientX, clientY: e.clientY, button: 0, detail: 2 });
+      } else if (type === "wheel") {
+        const list = freeScroller(elementBelow(e.clientX, e.clientY), Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? "y" : "x");
+        if (list) {
+          list.scrollTop += e.deltaY;
+          list.scrollLeft += e.deltaX;
+        }
+      }
+    }
+    function guard(e) {
+      if (!e.isTrusted) return;
+      const starts = e.type === "pointerdown" || e.type === "touchstart" || e.type === "mousedown" || e.type === "wheel" || e.type === "keydown";
+      if (starts ? !updateShield() : !shieldOn) {
+        if (e.type === "pointerdown" && e.pointerType !== "mouse") noteFreeSwipe();
         return;
       }
-      gesture = holdingReel() ? { x, y, target, pointerId, at: Date.now(), free: freeToMove(target), moved: fingers > 1 ? TAP_PX + 1 : 0, called: false } : null;
-      if (!gesture) noteFreeSwipe();
+      const inner = e.composedPath ? e.composedPath()[0] : e.target;
+      const onIt = ui.isShield(inner);
+      if (!onIt && isOurs(e.target)) return;
+      if (e.type.startsWith("key") && editable(e.target)) return;
+      e.stopImmediatePropagation();
+      const tapParts = ["pointerdown", "pointerup", "touchstart", "touchend", "mousedown", "mouseup", "click"];
+      if (e.cancelable && !(onIt && tapParts.includes(e.type))) e.preventDefault();
+      if (onIt) onShield(e);
     }
+    const INPUT_EVENTS = [
+      "pointerdown",
+      "pointermove",
+      "pointerup",
+      "pointercancel",
+      "touchstart",
+      "touchmove",
+      "touchend",
+      "touchcancel",
+      "mousedown",
+      "mousemove",
+      "mouseup",
+      "click",
+      "dblclick",
+      "auxclick",
+      "contextmenu",
+      "wheel",
+      "keydown",
+      "keypress",
+      "keyup",
+      "gesturestart",
+      "gesturechange",
+      "gestureend",
+      "selectstart",
+      "dragstart"
+    ];
+    for (const type of INPUT_EVENTS) window.addEventListener(type, guard, { capture: true, passive: false });
+    window.addEventListener(
+      "focusin",
+      (e) => {
+        if (!shieldOn || !editable(e.target) || isOurs(e.target)) return;
+        if (e.target === typingIn || Date.now() - tappedAt < TAP_FOCUS_MS) {
+          typingIn = e.target;
+          return;
+        }
+        e.target.blur();
+        if (Date.now() - focusLoggedAt > 5e3) {
+          focusLoggedAt = Date.now();
+          log.add("reel: Instagram opened a text box by itself, closed it (no keyboard)");
+        }
+      },
+      true
+    );
+    window.addEventListener("focusout", (e) => e.target === typingIn && (typingIn = null), true);
     let freeSwipeLoggedAt = 0;
     function noteFreeSwipe() {
       if (!settings.reelSwipe || FREE_SWIPE_PAGES.includes(page) || Date.now() - freeSwipeLoggedAt < 5e3) return;
@@ -1332,88 +1547,6 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         `swipe left free on ${pageLabel()}: biggest video ${share(biggest.width, window.innerWidth)}% wide, ${share(biggest.height, window.innerHeight)}% tall, top at ${share(biggest.top, window.innerHeight)}%`
       );
     }
-    function callOff() {
-      if (!gesture || gesture.called) return;
-      gesture.called = true;
-      if (Date.now() - swipeLoggedAt > 5e3) {
-        swipeLoggedAt = Date.now();
-        log.add("reel page: a swipe was stopped");
-      }
-      const { target, pointerId, x, y } = gesture;
-      callingOff = true;
-      try {
-        if (pointerId != null) {
-          target.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true, pointerId, pointerType: "touch", isPrimary: true, clientX: x, clientY: y }));
-        }
-        let touches = [];
-        try {
-          touches = [new Touch({ identifier: 0, target, clientX: x, clientY: y })];
-        } catch (e) {
-        }
-        target.dispatchEvent(new TouchEvent("touchcancel", { bubbles: true, changedTouches: touches }));
-      } catch (e) {
-      } finally {
-        callingOff = false;
-      }
-    }
-    function heldMove(e, x, y) {
-      if (!gesture || gesture.free || callingOff) return false;
-      gesture.moved = Math.max(gesture.moved, Math.abs(x - gesture.x), Math.abs(y - gesture.y));
-      if (gesture.moved > TAP_PX) callOff();
-      e.stopImmediatePropagation();
-      return true;
-    }
-    const active = { capture: true, passive: false };
-    window.addEventListener("pointerdown", (e) => {
-      if (e.pointerType !== "mouse" && !callingOff) startGesture(e.clientX, e.clientY, e.target, e.pointerId, 1);
-    }, active);
-    window.addEventListener("touchstart", (e) => {
-      if (!callingOff) startGesture(e.touches[0].clientX, e.touches[0].clientY, e.target, null, e.touches.length);
-    }, active);
-    window.addEventListener("pointermove", (e) => e.pointerType !== "mouse" && heldMove(e, e.clientX, e.clientY), active);
-    window.addEventListener(
-      "touchmove",
-      (e) => {
-        if (heldMove(e, e.touches[0].clientX, e.touches[0].clientY) && e.cancelable) e.preventDefault();
-      },
-      active
-    );
-    for (const type of ["pointerup", "pointercancel", "touchend", "touchcancel"]) {
-      window.addEventListener(
-        type,
-        (e) => {
-          if (!gesture || gesture.free || callingOff) return;
-          if (gesture.moved > TAP_PX) {
-            callOff();
-            e.stopImmediatePropagation();
-            if (e.cancelable && type === "touchend") e.preventDefault();
-          }
-          if (!type.startsWith("touch") || e.touches.length === 0) gesture.ended = true;
-        },
-        active
-      );
-    }
-    window.addEventListener(
-      "wheel",
-      (e) => {
-        if (!holdingReel() || freeToMove(e.target) || Math.abs(e.deltaY) < Math.abs(e.deltaX)) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      },
-      active
-    );
-    window.addEventListener(
-      "keydown",
-      (e) => {
-        const typing = e.target && e.target.closest && e.target.closest('input, textarea, [contenteditable="true"]');
-        if (typing || !holdingReel() || freeToMove(e.target)) return;
-        if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", " ", "j", "k"].includes(e.key)) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-        }
-      },
-      active
-    );
     function mainVideo() {
       let best = null;
       let bestShown = 0;
@@ -1459,6 +1592,10 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         return;
       }
       if (blocked || document.hidden) return;
+      if (!REEL_PAGES.includes(page) && !shieldOn) {
+        reelWatch = null;
+        return;
+      }
       const video = REEL_PAGES.includes(page) || reelWatch ? mainVideo() : fullScreenVideo();
       if (!video) {
         if (reelWatch && !REEL_PAGES.includes(page) && Date.now() - reelWatch.seen > 1500) reelWatch = null;
@@ -1587,6 +1724,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     setInterval(watchFeed, 500);
     setInterval(checkStoryAds, 400);
     setInterval(watchReel, 300);
+    setInterval(updateShield, 200);
     window.addEventListener("scroll", () => !FREE_SWIPE_PAGES.includes(page) && watchReel(), { capture: true, passive: true });
     setInterval(fixViewport, 500);
     new MutationObserver(onMutations).observe(root, { childList: true, subtree: true, characterData: true });

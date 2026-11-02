@@ -40,15 +40,22 @@ the moment it starts loading, and works in five layers:
    **Blocked** screen covers it, pauses any video, and offers **Go back**. On a
    single reel (e.g. one sent in DMs), moving to a *different* reel is
    blocked: that's what stops the endless swipe. While a reel is on screen (a
-   reel's page, or any page showing a video that fills the screen, since
-   Instagram can change the address a moment after a reel opens) the swipe
-   itself is stopped too: Instagram never sees the finger move (nor the wheel,
-   nor the up/down keys), and once it's a swipe Instagram is told the gesture
-   was called off, so it can't move on, open the reply box (the keyboard) or
-   anything else, however long you've watched, also with the keyboard open.
-   Taps work as usual, and lists in sheets over the reel (comments) scroll. As a backstop, if another
-   full-screen video still takes the reel's place, it's paused and blocked, and
-   **Go back** scrolls back to your reel. Home is Instagram's own home page, with the
+   reel's page, or any page showing a video as wide as the screen and at least
+   half as tall, since Instagram can show a reel over a chat, open its full
+   viewer over it a moment later, or change the address), a clear **shield** of
+   the filter's own lies over the whole screen. Every touch lands on it, so
+   Instagram never sees a finger move on a reel: on a reel, swiping to scroll
+   simply doesn't exist, however long you've watched, and no swipe or long press
+   can open the reply box (the keyboard). A **tap** is passed on to whatever of
+   Instagram's is under your finger, so all of a reel's buttons work: like
+   (a double tap too), comments, share, "more", the description, the name, the
+   sound, writing a comment (the keyboard opens because you tapped the box). A
+   swipe moves only a list that holds no video: the comments, the people to send
+   it to, a long description. A text box Instagram focuses without your tap is
+   closed at once. A video sent in a chat
+   is narrower than the screen, so the chat itself is never shielded. As a
+   backstop, if another full-screen video still takes the reel's place, it's
+   paused and blocked, and **Go back** scrolls back to your reel. Home is Instagram's own home page, with the
    stories row.
 4. **The feed keeps its own layout.** Instagram's feed keeps only the posts
    near the screen in the page, and holds the room of the others from their
@@ -109,7 +116,7 @@ src/filter/filter.js    The engine: observer, page checks, tap blocking
 src/filter/report.js    "Report a problem" outline (anonymised)
 src/filter/log.js       The report's timeline: scroll jumps, posts arriving, what the filter did
 src/filter/lock.js      The code that unlocks the switches (only its fingerprint)
-src/filter/ui.js, *.css Blocked screen, settings button and panel
+src/filter/ui.js, *.css Blocked screen, settings button and panel, the shield over a reel
 src/filter/generated/   The built filter as the Android app injects it (don't edit)
 scripts/build-filter.mjs  Builds dist/let-me-wonder.user.js and src/filter/generated/
 dist/let-me-wonder.user.js  The built script that Userscripts installs (don't edit)
@@ -184,7 +191,7 @@ Chrome (needs Playwright with Chromium, preinstalled in the cloud environment).
 traffic from cloud servers and shows little without an account, so that check
 confirms that the filter starts without errors, leaves the login form alone, and
 holds a reel in Instagram's real reel viewer (which opens logged out) against real
-finger swipes.
+finger swipes, with the shield over it and a tap still reaching Instagram (the sound).
 
 The Android app is checked in the cloud with `npx expo-doctor` and
 `npx expo export --platform android` (does the app's code compile). The installable

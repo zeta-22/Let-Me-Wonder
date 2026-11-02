@@ -96,6 +96,7 @@
         <div data-fx="dm-msg"><span>see you at 8 tonight</span></div>
         <div data-fx="dm-reel"><a href="/reel/DM1/" data-fx="dm-reel-link">Reel from friend_one</a></div>
         <div><a href="/reels/DM3/" data-fx="dm-reels-feed-link">Another reel, linked into the reels feed</a></div>
+        <div data-fx="dm-video" style="width:70%"><video muted playsinline style="display:block;width:100%;height:55vh;background:#333"></video></div>
         <textarea data-fx="composer" placeholder="Message..."></textarea>
       </div></main>`,
     login: () => `
@@ -150,19 +151,34 @@
     // full-screen list you swipe (scroll-snap) on to other reels, and the address stays put.
     // Swiping moves it two ways: the browser's own scrolling, and the viewer's code (a
     // finger lifted 60 px higher than it went down, by touch or by pointer events).
-    reelfeed: (id) => `
-      <main role="main"><div data-fx="reel-list" style="height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory">
+    reelfeed: (id) => `<main role="main">${reelList(id)}</main>`,
+    // A reel opened from a DM shown first as a post (the video filling the screen, a comment
+    // box), with Instagram's full viewer opening over it a moment later (&viewer=ms, 2 s by
+    // default), in a dialog, where you swipe on to other reels.
+    reelpost: (id) => `
+      <main role="main"><article data-fx="reel-article" data-id="${id}">
+        <video muted playsinline data-fx="reel-post-video" style="display:block;width:100%;height:100vh;background:#111"></video>
+        <a href="/friend_one/">friend_one</a>
+        <textarea data-fx="comment-box" placeholder="Aggiungi un commento..."></textarea>
+      </article></main>`,
+    other: () => `<main role="main"><p data-fx="other">Some other page</p></main>`,
+  };
+
+  function reelList(id) {
+    return `<div data-fx="reel-list" style="height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory">
         ${[id, 'NEXT1', 'NEXT2']
           .map(
             (r, i) => `<div data-fx="reel-item-${i}" style="height:100vh;scroll-snap-align:start;position:relative">
               <video muted playsinline data-fx="reel-video-${i}" style="display:block;width:100%;height:90vh;background:#222"></video>
               <a href="/friend_${i}/reel/${r}/">reel ${r}</a>
-              <button data-fx="reel-comments-${i}" style="position:absolute;right:8px;bottom:12vh">Commenti</button></div>`,
+              <div role="button" aria-label="Mi piace" data-fx="reel-like-${i}" style="position:absolute;right:8px;bottom:40vh;width:44px;height:44px">♡</div>
+              <div role="button" aria-label="Condividi" data-fx="reel-share-${i}" style="position:absolute;right:8px;bottom:30vh;width:44px;height:44px">➤</div>
+              <button data-fx="reel-comments-${i}" style="position:absolute;right:8px;bottom:12vh">Commenti</button>
+              <div data-fx="reel-caption-${i}" style="position:absolute;left:8px;bottom:14vh;max-width:60%;color:#fff">a caption… <span role="button" data-fx="reel-more-${i}" style="display:inline-block;padding:8px">altro</span></div></div>`,
           )
           .join('')}
-      </div></main>`,
-    other: () => `<main role="main"><p data-fx="other">Some other page</p></main>`,
-  };
+      </div>`;
+  }
 
   // A feed like Instagram's real one (seen in a 0.3.2 report): only the posts near the
   // screen are in the page, and the room for the others is padding on the list. Each
@@ -285,7 +301,11 @@
     if (path === '/explore/') return views.explore();
     if (path.startsWith('/explore/search/')) return views.search();
     if (path === '/reels/') return views.reels();
-    if ((m = path.match(/^\/reel\/([^/]+)\/$/))) return params.get('fake') === 'reelfeed' ? views.reelfeed(m[1]) : views.reel(m[1]);
+    if ((m = path.match(/^\/reel\/([^/]+)\/$/))) {
+      if (params.get('fake') === 'reelfeed') return views.reelfeed(m[1]);
+      if (params.get('fake') === 'reelpost') return views.reelpost(m[1]);
+      return views.reel(m[1]);
+    }
     if (path === '/direct/inbox/') return views.inbox();
     if (path.startsWith('/direct/t/')) return views.thread();
     if (path === '/accounts/login/') return views.login();
@@ -313,7 +333,15 @@
     view.innerHTML = viewFor(location.pathname);
     if (view.querySelector('[data-fx="spinner-box"]')) startEndlessLoader();
     if (view.querySelector('.vlist')) startVirtualFeed();
-    if (view.querySelector('[data-fx="reel-list"]')) startReelFeed();
+    if (view.querySelector('[data-fx="reel-list"]')) startReelFeed(view.querySelector('[data-fx="reel-list"]'));
+    if (view.querySelector('[data-fx="reel-post-video"]')) {
+      const id = view.querySelector('[data-fx="reel-article"]').dataset.id;
+      setTimeout(() => {
+        if (!view.querySelector('[data-fx="reel-post-video"]')) return;
+        document.body.insertAdjacentHTML('beforeend', `<div role="dialog" data-fx="reel-viewer" style="position:fixed;inset:0;background:#000">${reelList(id)}</div>`);
+        startReelFeed(document.querySelector('[data-fx="reel-viewer"] [data-fx="reel-list"]'));
+      }, Number(params.get('viewer') || 2000));
+    }
     if (location.pathname === '/notifications/') {
       // The suggestions list arrives a moment after its heading.
       setTimeout(() => {
@@ -343,8 +371,7 @@
 
   // With &after=direct or &after=post, 2 s after the reel opens Instagram changes the
   // address (back to the chat, or to the post's address) while the reel stays on screen.
-  function startReelFeed() {
-    const list = view.querySelector('[data-fx="reel-list"]');
+  function startReelFeed(list) {
     const after = { direct: '/direct/t/123/', post: '/p/DM1/' }[params.get('after')];
     if (after) setTimeout(() => history.replaceState({}, '', after + location.search), 2000);
     window.fakeTaps = 0;
@@ -395,13 +422,35 @@
       if (pointerDown !== null && pointerDown - e.clientY > 60) next();
       pointerDown = null;
     });
+    window.fakeLikes = 0;
+    window.fakeDoubleTaps = 0;
+    list.addEventListener('dblclick', (e) => e.target.tagName === 'VIDEO' && window.fakeDoubleTaps++);
     list.addEventListener('click', (e) => {
+      const fx = (e.target.closest('[data-fx]') || e.target).dataset.fx || '';
       if (e.target.tagName === 'VIDEO') window.fakeTaps++;
-      if (!e.target.dataset.fx || !e.target.dataset.fx.startsWith('reel-comments')) return;
-      // Comments open in a sheet over the reel, where you scroll the comments.
+      if (fx.startsWith('reel-like')) window.fakeLikes++;
+      if (fx.startsWith('reel-more')) window.fakeCaptionOpen = true;
+      if (fx.startsWith('reel-share')) {
+        // The people to send it to, in a sheet you scroll; "Invia" sends and closes it.
+        document.body.insertAdjacentHTML(
+          'beforeend',
+          `<div role="dialog" data-fx="share-sheet" style="position:fixed;left:0;right:0;bottom:0;height:50vh;overflow-y:auto;background:#fff">
+            ${Array.from({ length: 20 }, (_, i) => `<div style="height:56px">contact ${i} <button data-fx="share-send-${i}">Invia</button></div>`).join('')}</div>`,
+        );
+        const sheet = document.querySelector('[data-fx="share-sheet"]');
+        sheet.addEventListener('click', (ev) => {
+          const send = ev.target.closest('button');
+          if (!send) return;
+          window.fakeSent = send.dataset.fx;
+          sheet.remove();
+        });
+      }
+      if (!fx.startsWith('reel-comments')) return;
+      // Comments open in a sheet over the reel, where you scroll the comments and write one.
       document.body.insertAdjacentHTML(
         'beforeend',
         `<div role="dialog" data-fx="comments-sheet" style="position:fixed;left:0;right:0;bottom:0;height:60vh;overflow-y:scroll;background:#fff">
+          <textarea data-fx="comment-box" placeholder="Aggiungi un commento..." style="display:block;width:90%;height:40px"></textarea>
           ${Array.from({ length: 30 }, (_, i) => `<p style="height:60px">comment ${i}</p>`).join('')}</div>`,
       );
     });

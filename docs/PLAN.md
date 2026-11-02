@@ -770,6 +770,97 @@ Tests: the rule (src/mobile/updatePolicy.js) with a fake clock: installed just a
 opening, later it waits, a short trip to another app isn't an opening, never on DMs,
 making a post or a story, or login. 62 pass.
 
+### Stage 3, round 16: on a reel, swiping doesn't exist (2026-11-02)
+What you said (after 0.4.4): on a reel sent in a chat, a swipe opens the keyboard, and
+after waiting a few seconds you can scroll through reels as usual. Take the keyboard away,
+and make swiping not exist at all on reels.
+
+Why rounds 11 to 15 kept failing: each version stopped the swipe by recognising things,
+and a wrong guess left a hole. In 0.4.3/0.4.4 the hole was `freeToMove()`: a scrolling
+list inside a `role="dialog"` that didn't hold "the reel's video" was taken for the
+comments sheet and left free. Reproduced in the fake: the reel's page first (its video
+filling the screen, a comment box), and 2 s later Instagram's full viewer opening over it
+in a dialog. The "reel's video" was then the one *under* the dialog (it filled more of the
+screen), so the viewer counted as a sheet: with 0.4.4 a swipe there moved on to the next
+reel **and** opened the reply box with the keyboard, exactly what you saw. Before the
+viewer opened, swipes were stopped: hence "after a few seconds".
+
+Fix (0.4.5): no more guessing what's free. While a reel is on screen, a clear **shield**
+of the filter's own lies over the whole screen (in its shadow root, above Instagram,
+`touch-action: none`). Every touch lands on it, and every input event of yours (touch,
+pointer, mouse, click, wheel, keys, long press, double tap) is stopped in the capture phase
+on `window` before any of Instagram's code, whatever it lands on. Instagram gets nothing,
+so it can't move on, open the reply box, or anything else: there is no swipe to stop. Plus:
+- A text box Instagram focuses by itself while the shield is up is closed at once, and one
+  already open when a reel comes up is closed too: no keyboard over a reel.
+- The shield's own buttons, in a small dark bar at the bottom: play/pause (a tap anywhere
+  does it too), sound, close (back, like Android's back button). Instagram's like, comments
+  and reply can't be reached on a reel any more: that's the price of no swiping at all.
+- "A reel on screen": a reel's page (`/reel/<id>/`, always), or a video at least half the
+  screen tall and 90% as wide, on any page but Home, stories, making a post or story,
+  Explore, search and login. A video sent in a chat is narrower, so a chat is never
+  shielded and typing there works, also with the keyboard up. The shield stays 1.5 s if
+  Instagram draws the reel again, but not across an address change, so going back to the
+  chat frees it right away.
+- The filter's settings button, Blocked screen and settings panel sit above the shield and
+  work as usual. Events made by code (not your fingers) pass, as before.
+- The backstop stays (another reel coming up is paused and blocked), now only while a reel
+  is on screen, so a video in a chat you came back to is never taken for another reel.
+- For the report: "shield up/down", "a swipe was stopped, Instagram never saw it", "Instagram
+  opened a text box, closed it".
+
+Tests: the reel page with Instagram's viewer opening over it after 2 s (fails on 0.4.4:
+next reel and reply box); swipes up and down, a few pixels, a 900 ms hold, the wheel and
+the keys: nothing moves, no reply box; a text box Instagram focuses is closed; a tap
+plays/pauses, the sound button unmutes, Instagram's comments button gets nothing, close
+goes back to the chat, which scrolls and takes typing; a chat with a video and the keyboard
+up has no shield; the settings button works over the shield. `npm run smoke`, on
+Instagram's real reel viewer: no swipe moves on, the shield is up, a tap pauses the reel.
+65 pass.
+
+Published on Android (EAS Update, channel `preview`, update group `1e284e5d`), with the
+Expo token from the first chat, as you asked (kept in the session's scratch folder, never
+in the repo). The app installs it when it's opened (0.4.4's rule). iPhone: when merged to
+`main`.
+
+### Stage 3, round 17: every button on a reel, still no swiping (2026-11-02)
+What you said (on 0.4.5): you want to tap everything you can on a reel (the description,
+like, the comments, send, ...), everything except swiping on the video to scroll.
+
+The shield stays: Instagram still never sees a finger move on a reel. What changes is what
+a touch on the shield does (`onShield()` in filter.js):
+- **A tap** (moved under 10 px, lifted within 500 ms) is passed on to whatever of
+  Instagram's is under the finger (`document.elementsFromPoint`, past the shield), the way
+  a browser sends a finger's tap: pointerdown, touchstart, pointerup, touchend, then (unless
+  Instagram called the touch off) mousedown, the focus of a text box, mouseup and click. It's
+  sent from inside your real tap's click, so Instagram may start the sound and the keyboard
+  opens for a box you tapped. A double tap passes a dblclick (a like). Links work too, and
+  still go through the page rules: another reel is blocked, a name opens the profile.
+- **A swipe** moves only a list that scrolls that way and holds no video (the comments, the
+  people to send it to, a long description), by the filter, with a glide at the end. The
+  reels hold videos, and the page itself is never moved, so a swipe on the reel moves
+  nothing.
+- **A long press** reaches nothing (some viewers open the reply box on one), nor do the
+  wheel and keys, except typing in a text box.
+- A text box Instagram focuses within 1.5 s of your tap is yours and keeps the keyboard
+  while you're in it; one it focuses otherwise (after a swipe, or by itself) is closed.
+- The play/pause, sound and close bar of 0.4.5 is gone: Instagram's own buttons work. The
+  settings button moves to the right edge on reels (it sat over Instagram's "Altro").
+
+Checked on Instagram's real reel viewer (logged out): taps on the reel, "Mi piace",
+"Commenta", "Condividi" and "Altro" do the same with the filter as without (the sound
+toggles; logged out, the buttons show "Continua a guardare nell'app"). Swipes don't move on.
+
+Tests: on the fake viewer, a tap on the reel, like, a double tap, "altro", share (the list
+of people scrolls, Invia sends), comments (they scroll and glide; tapping the box lets you
+type, also j/k and spaces, and it stays open), all while the reel stays put and no reply box
+opens; a swipe on the reel still moves nothing; a tapped name link opens, a tapped link to
+another reel is blocked; a long press isn't a tap; a box Instagram focuses by itself is
+closed. `npm run smoke`: the shield is up and a tap reaches Instagram (the sound). 66 pass.
+
+Published, as you said: Android (EAS Update, channel `preview`, update group `f52a279c`),
+and merged to `main` for the iPhone.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

@@ -1,5 +1,6 @@
-// The filter's own screens: the Blocked screen, the small settings button and
-// the settings panel (the panel is for Safari; the Android app has its own).
+// The filter's own screens: the Blocked screen, the small settings button, the settings
+// panel (the panel is for Safari; the Android app has its own) and the clear shield over
+// a reel.
 // Everything lives in one shadow root, so Instagram's styles can't change it.
 
 import uiCss from './ui.css';
@@ -44,6 +45,11 @@ export function createUi(options) {
   ]);
   let onBack = null;
   backButton.addEventListener('click', () => onBack && onBack());
+
+  // The shield over a reel: clear, over the whole screen, so every touch lands on it and
+  // none on Instagram. The filter decides what a touch on it does (see onShield() in
+  // filter.js): a tap is passed on to Instagram, a swipe never.
+  const shield = el('div', { class: 'shield', hidden: '' });
 
   // Settings button
   const gear = el('button', { class: 'gear', type: 'button', 'aria-label': 'Let Me Wonder settings', html: SLIDERS_ICON, hidden: '' });
@@ -121,7 +127,7 @@ export function createUi(options) {
   closeButton.addEventListener('click', () => closePanel());
   reportButton.addEventListener('click', () => copyReport());
 
-  shadow.append(blocked, gear, backdrop);
+  shadow.append(shield, blocked, gear, backdrop); // later ones on top: the shield is the lowest
 
   let gearWanted = false;
   function refreshGear() {
@@ -183,6 +189,13 @@ export function createUi(options) {
     setGearPlace(place) {
       if (place) gear.dataset.place = place;
       else delete gear.dataset.place;
+    },
+    setShield(on) {
+      shield.hidden = !on;
+    },
+    // Whether a node (from an event's composed path) is the shield.
+    isShield(node) {
+      return !!node && (node === shield || shield.contains(node));
     },
     openPanel,
   };
