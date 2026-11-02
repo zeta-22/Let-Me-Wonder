@@ -117,6 +117,7 @@ dist/let-me-wonder.user.js  The built script that Userscripts installs (don't ed
 App.js, index.js        The Android app's entry point
 src/mobile/InstagramScreen.js  WebView + filter, app-level page blocking, back button, restart after a page crash
 src/mobile/urlPolicy.js What to do with a full page load (allow/block/browser/ignore)
+src/mobile/updates.js, updatePolicy.js  Updates installed when you open the app, not the time after
 src/mobile/SettingsScreen.js, BlockedScreen.js, settings.js, injected.js, theme.js
 app.json, eas.json      App name, Android package, permissions; Expo cloud build profile
 assets/                 Icons (made by scripts/make-icons.mjs)
@@ -125,7 +126,9 @@ test/fake-instagram/    A tiny fake Instagram that copies the signals the filter
 test/filter.test.mjs    Automatic checks for the filter (npm test)
 test/url-policy.test.mjs  Automatic checks for the app's page rules (npm test)
 test/lock.test.mjs      Automatic checks for the switches' lock (npm test)
-test/smoke-live.mjs     Quick check on the real, logged-out instagram.com (npm run smoke)
+test/update-policy.test.mjs  Automatic checks for when the app installs an update (npm test)
+test/smoke-live.mjs     Quick check on the real, logged-out instagram.com, including finger
+                        swipes on its real reel viewer (npm run smoke)
 docs/                   Plan, iPhone and Android guides, phone checklist
 ```
 
@@ -162,7 +165,8 @@ Instagram changes its site often. Most fixes are a small edit to
      `src/filter/generated/`.
    - Merge to `main`. The iPhone gets the update automatically after a while.
    - Android: publish it with `npx eas-cli update --channel preview --message "…"`.
-     The app picks it up the next time it opens.
+     The app installs it when it's next opened, or brought back after a minute or
+     more, except on DMs, making a post or a story, and login (`src/mobile/updatePolicy.js`).
 
 ## Development
 
@@ -177,8 +181,10 @@ npm test
 `npm test` builds the filter and runs the automatic checks in a headless
 Chrome (needs Playwright with Chromium, preinstalled in the cloud environment).
 `npm run smoke` loads the real instagram.com logged out. Instagram limits
-traffic from cloud servers, so that check can only confirm that the filter
-starts without errors.
+traffic from cloud servers and shows little without an account, so that check
+confirms that the filter starts without errors, leaves the login form alone, and
+holds a reel in Instagram's real reel viewer (which opens logged out) against real
+finger swipes.
 
 The Android app is checked in the cloud with `npx expo-doctor` and
 `npx expo export --platform android` (does the app's code compile). The installable

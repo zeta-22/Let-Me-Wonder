@@ -744,6 +744,32 @@ box focused and the screen shorter, a swipe on the reel doesn't move on; typing 
 spaces and j/k included; taps, the comments sheet, Home and the switch off as before.
 56 pass.
 
+### Stage 3, round 15: checked on Instagram's real reel viewer; updates at the first opening (2026-11-02)
+What you said: "the keyboard opens and after a few seconds I can scroll the reels", two
+minutes after 0.4.3 was published. That's 0.4.2's behaviour, and the app only used an
+update the second time it was opened.
+
+Checked on the real thing: Instagram's reel viewer opens logged out (`/reels/<id>/`, under
+an "open the app" sheet), as the app sees it (its user agent). Without the filter, real
+finger swipes move to another reel (only past about half the screen; shorter ones spring
+back), and the address changes to that reel's. With 0.4.3 no swipe does: right away, after
+10 and 20 seconds, up or down, nor the arrow keys or the wheel. The viewer moves the reels
+with its own code, not by scrolling the page. Logged out there's no reply box, so the
+keyboard part is checked on the fake only. `npm run smoke` now makes this check every time.
+
+Updates (0.4.4, the app only): Expo downloads an update at launch and used it at the next
+launch. Now the app installs it as soon as it's downloaded, if that's within 30 s of opening
+the app, or of coming back to it after a minute or more in the background (Android often
+keeps the app in memory; on coming back the app looks for an update itself). Later, or on a
+page where you may be typing (DMs, making a post or a story, login), it waits for the next
+opening instead of reloading Instagram under your fingers. "Check for updates" as before.
+This change itself still arrives the old way: one last time, reopen twice or tap "Check for
+updates".
+
+Tests: the rule (src/mobile/updatePolicy.js) with a fake clock: installed just after
+opening, later it waits, a short trip to another app isn't an opening, never on DMs,
+making a post or a story, or login. 62 pass.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.
@@ -780,7 +806,8 @@ spaces and j/k included; taps, the comments sheet, Home and the switch off as be
   screen; Explore redirects to search; reel-to-reel is blocked; the snapshot masks
   usernames and never contains typed text.
 - **Every change:** a smoke test on the real logged-out instagram.com (no errors, login
-  form untouched).
+  form untouched, and real finger swipes on Instagram's reel viewer: they move on without
+  the filter and don't with it).
 - **Before each Android build:** the app is compiled in the cloud first (`npx expo
   export`, `expo-doctor`).
 - **What I can't check myself:** logged-in Instagram and Safari itself. Those are checked
