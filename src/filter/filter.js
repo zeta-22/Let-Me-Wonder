@@ -32,8 +32,8 @@ const NO_GEAR_PAGES = ['direct', 'login', 'create']; // making a post or story: 
 const HIDE_CSS = '{display:none!important}';
 const INVISIBLE_CSS = '{visibility:hidden!important;pointer-events:none!important}'; // keeps its size
 const SMALL_COVER_PX = 36; // a hidden post's box with the "Small boxes" test switch on
-const STORY_RETRY_MS = 1500; // a story ad still showing this long after a skip: try again
-const STORY_MAX_TRIES = 3;
+const STORY_SETTLE_MS = 700; // after a skip, the story changes (Instagram slides it out): the ad's label is left alone
+const STORY_MAX_SKIPS = 8; // skips for one ad at most (an ad can have several parts)
 const STORY_WAY_MS = 3000; // how long your last tap or swipe in stories says which way you're going
 const SWIPE_PX = 50;
 const REEL_PAGES = ['reel', 'post']; // a reel's own page (opened from a DM, a profile, the feed)
@@ -161,7 +161,11 @@ function start() {
 
   // --- styles ---------------------------------------------------------------
   function buildCss() {
-    const parts = [pageCss];
+    // With pinch to zoom on, Instagram's page can be zoomed, and Safari would then take two
+    // quick taps (going through stories) for a double tap to zoom in, with no tap for
+    // Instagram. "manipulation" keeps panning and pinching, without the double-tap zoom
+    // Instagram's own page never had.
+    const parts = [pageCss, 'html[data-lmw-on~="pinchZoom"]:not([data-lmw-page="create"]){touch-action:manipulation}'];
     for (const t of TOGGLES) {
       const scope = `html[data-lmw-on~="${t.id}"]`;
       const marked = `[${HIDE_ATTR}~="${t.id}"]`;
@@ -218,7 +222,10 @@ function start() {
       notePage();
       return;
     }
-    if (lastPath !== null) navCount++;
+    if (lastPath !== null) {
+      navCount++;
+      resetZoom();
+    }
     lastPath = path;
     pathSince = Date.now();
     const next = pageOf(path);
@@ -534,7 +541,18 @@ function start() {
     else for (const post of node.querySelectorAll(STRUCTURE.post)) into.add(post);
   }
 
+  let slowLoggedAt = 0;
   function onMutations(records) {
+    const began = performance.now();
+    handleMutations(records);
+    const took = Math.round(performance.now() - began);
+    if (took >= 50 && Date.now() - slowLoggedAt > 5000) {
+      slowLoggedAt = Date.now();
+      log.add(`filter: ${took} ms for one batch of page changes`);
+    }
+  }
+
+  function handleMutations(records) {
     checkPath();
     if (root.getAttribute('data-lmw-on') === null) applyRootState(); // in case the page reset our marks
     const added = new Set();
@@ -560,13 +578,26 @@ function start() {
 
   // --- ads between stories -------------------------------------------------------
   // A story ad has the same "Sponsored" label as a feed ad, but no post around it. The
-  // filter pauses it and moves on with Instagram's own controls (STORIES), or else the
-  // arrow keys, which the story viewer answers. Never with the ad's own buttons. It moves
-  // the way you were going: forward, or back to the story before the ad if you were
-  // going back. The first time, the viewer's outline is kept for the problem report, in
-  // case Instagram changes how its stories are built.
+  // filter moves on with Instagram's own controls, never with the ad's buttons, the way you
+  // were going: forward, or back to the story before the ad if you were going back.
+  // Instagram builds its story viewer two ways (its code, read on instagram.com in Nov 2026):
+  // - On a phone (the iPhone's Safari, the Android app): no "Next" button and no arrow keys.
+  //   The screen is a tap zone with empty, unlabelled buttons, on the right for the next
+  //   part and on the left for the one before. The filter presses those (STORIES.zone).
+  // - On a computer: "Next" / "Previous" buttons by the story, and the arrow keys.
+  // The ways are tried in turn (Instagram's labelled button, its tap zone, the arrow key):
+  // when one leaves the ad where it was, the next one is tried. An ad in several parts
+  // (its address changes, the ad stays) is moved through the same way.
+  // Only an ad actually on screen counts: its label shown, in a story that sits in the
+  // middle of the screen. Not an ad drawn next to it, sliding out, or kept hidden.
+  // Nothing is paused: on a phone, Instagram doesn't start a story paused by someone else
+  // again, so an ad (or the story after it) paused by the filter stood still for good.
+  // If no way works, the ad is left alone: it plays and Instagram moves on by itself, and
+  // your taps and swipes do what they always do. The first time, the viewer's outline is
+  // kept for the problem report, in case Instagram changes how its stories are built.
   const storyLabels = new Set(); // "Sponsored" labels that appeared on a story page
-  let storyAd = null; // { label, path, tries, at, back }: the ad being skipped
+  // { label, path, at, back, way, tried: Set, skips, done }: the ad being skipped
+  let storyAd = null;
   let skipping = false;
   let storyOutlineKept = false;
   let storyWay = { back: false, at: 0 }; // your last move in stories
@@ -577,14 +608,41 @@ function start() {
   function noteWay(back) {
     if (page === 'stories') storyWay = { back, at: Date.now() };
   }
-  window.addEventListener('pointerdown', (e) => (pointerStart = e.isTrusted ? { x: e.clientX, y: e.clientY } : null), true);
+  // A finger is read from its touch events: once a finger moves sideways the browser calls
+  // its pointer off (pointercancel, no pointerup), so a swipe never showed as a pointer.
+  // A mouse or a pen, from its pointer events.
+  function startOf(x, y) {
+    return { x, y, at: Date.now(), path: location.pathname };
+  }
+
+  function endOf(start, x, y, finger) {
+    const dx = x - start.x;
+    const swiped = Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(y - start.y);
+    noteWay(swiped ? dx > 0 : start.x < window.innerWidth / 3);
+    if (finger && page === 'stories') noteStoryGesture(start, x, y);
+  }
+
+  const passiveCapture = { capture: true, passive: true };
+  window.addEventListener(
+    'touchstart',
+    (e) => (pointerStart = e.isTrusted && e.touches.length === 1 ? startOf(e.touches[0].clientX, e.touches[0].clientY) : null),
+    passiveCapture,
+  );
+  window.addEventListener(
+    'touchend',
+    (e) => {
+      if (!e.isTrusted || !pointerStart || e.touches.length || !e.changedTouches.length) return;
+      endOf(pointerStart, e.changedTouches[0].clientX, e.changedTouches[0].clientY, true);
+      pointerStart = null;
+    },
+    passiveCapture,
+  );
+  window.addEventListener('pointerdown', (e) => e.isTrusted && e.pointerType !== 'touch' && (pointerStart = startOf(e.clientX, e.clientY)), true);
   window.addEventListener(
     'pointerup',
     (e) => {
-      if (!e.isTrusted || !pointerStart) return;
-      const dx = e.clientX - pointerStart.x;
-      const swiped = Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(e.clientY - pointerStart.y);
-      noteWay(swiped ? dx > 0 : pointerStart.x < window.innerWidth / 3);
+      if (!e.isTrusted || e.pointerType === 'touch' || !pointerStart) return;
+      endOf(pointerStart, e.clientX, e.clientY, false);
       pointerStart = null;
     },
     true,
@@ -597,46 +655,94 @@ function start() {
     true,
   );
 
-  function isShown(el) {
-    return el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+  // Shown, and its middle on the screen: not hidden, not off the edge, not covered by a fade.
+  function onScreen(el) {
+    try {
+      if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+    } catch (e) {
+      /* an older browser: the checks below */
+    }
+    if (getComputedStyle(el).visibility === 'hidden') return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return false;
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    return x > 0 && x < window.innerWidth && y > 0 && y < window.innerHeight;
+  }
+
+  // A story ad you're looking at: its label on screen, in a story in the middle of the
+  // screen (a story drawn next to the one you see, or sliding in or out, isn't).
+  function adOnScreen(label) {
+    if (!onScreen(label)) return false;
+    const r = viewerOf(label).getBoundingClientRect();
+    return Math.abs(r.left + r.width / 2 - window.innerWidth / 2) < window.innerWidth * 0.12;
   }
 
   function checkStoryAds() {
     if (page !== 'stories' || !settings.ads || blocked) return;
     for (const label of storyLabels) {
       if (!label.isConnected) storyLabels.delete(label);
-      else if (isShown(label)) return skipStoryAd(label);
+      else if (adOnScreen(label)) return skipStoryAd(label);
     }
   }
 
-  function skipStoryAd(label) {
-    const now = Date.now();
-    // The same label is the same ad until the story had time to change: Instagram moves the
-    // address to the next story a moment before the ad leaves the page. A label still there
-    // later is the ad that didn't go, or a new ad reusing it (on a new address).
-    const same = storyAd && storyAd.label === label;
-    if (skipping || (same && now - storyAd.at < STORY_RETRY_MS)) return;
-    const retry = same && storyAd.path === location.pathname;
-    const tries = retry ? storyAd.tries + 1 : 1;
-    if (tries > STORY_MAX_TRIES) return;
-    const back = retry ? storyAd.back : storyWay.back && now - storyWay.at < STORY_WAY_MS;
-    storyAd = { label, path: location.pathname, tries, at: now, back };
-    if (!storyOutlineKept) {
-      storyOutlineKept = true;
-      log.note('the story viewer when an ad showed', outlineOf(viewerOf(label)));
-    }
-    pauseMedia();
+  // The ways to move on from a story, in the order they're tried: Instagram's own button,
+  // its tap zone on a phone, the arrow key. Each one is { name, how, run } or null when
+  // this viewer hasn't got it.
+  function storyWays(label, back) {
     // "Previous" is looked for next to "next", and never at the top of the screen, where
     // an "Indietro" would be the arrow that leaves the stories.
     const next = controlNear(nextLabels, label);
     const control = back ? next && controlNear(previousLabels, next, { notOnTop: true }) : next;
+    const zone = tapZone(label, back);
     const key = back ? 'ArrowLeft' : 'ArrowRight';
-    const how = control ? `the ${back ? 'previous' : 'next'} button` : `the ${back ? 'left' : 'right'}-arrow key`;
-    log.add(`story ad: skipped${back ? ' backwards' : ''} with ${how}${tries > 1 ? `, try ${tries}` : ''}`);
+    return [
+      control && { name: 'button', how: `the ${back ? 'previous' : 'next'} button`, run: () => press(control) },
+      zone && { name: 'zone', how: `Instagram's tap zone on the ${back ? 'left' : 'right'}`, run: () => press(zone) },
+      {
+        name: 'key',
+        how: `the ${back ? 'left' : 'right'}-arrow key`,
+        run: () => label.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, keyCode: back ? 37 : 39, bubbles: true })),
+      },
+    ].filter(Boolean);
+  }
+
+  function skipStoryAd(label) {
+    const now = Date.now();
+    // After a skip, the same label is left alone while the story changes (Instagram slides
+    // the old story out). Still on screen after that, it's the ad that didn't go (the
+    // address is the same: that way didn't work, the next one is tried), or the ad's next
+    // part (a new address: the same way again).
+    const same = storyAd && storyAd.label === label;
+    if (skipping || (same && (storyAd.done || now - storyAd.at < STORY_SETTLE_MS))) return;
+    const ad = same
+      ? storyAd
+      : { label, back: storyWay.back && now - storyWay.at < STORY_WAY_MS, tried: new Set(), skips: 0, way: null, done: false };
+    let note = '';
+    if (same && location.pathname === ad.path) {
+      ad.tried.add(ad.way);
+      note = ', the last way did nothing';
+    } else if (same) {
+      note = ', its next part';
+    }
+    const ways = storyWays(label, ad.back).filter((w) => !ad.tried.has(w.name));
+    const way = ways.find((w) => w.name === ad.way) || ways[0];
+    if (!way || ad.skips >= STORY_MAX_SKIPS) {
+      ad.done = true;
+      storyAd = ad;
+      log.add("story ad: couldn't skip it, left it to Instagram (it moves on by itself, and your taps work)");
+      return;
+    }
+    Object.assign(ad, { path: location.pathname, at: now, way: way.name, skips: ad.skips + 1 });
+    storyAd = ad;
+    if (!storyOutlineKept) {
+      storyOutlineKept = true;
+      log.note('the story viewer when an ad showed', outlineOf(viewerOf(label)));
+    }
+    log.add(`story ad: skipped${ad.back ? ' backwards' : ''} with ${way.how}${note}`);
     skipping = true;
     try {
-      if (control) press(control);
-      else label.dispatchEvent(new KeyboardEvent('keydown', { key, code: key, keyCode: back ? 37 : 39, bubbles: true }));
+      way.run();
     } finally {
       skipping = false;
     }
@@ -651,17 +757,27 @@ function start() {
     return node;
   }
 
+  // What a finger at the middle of `el` would touch: `el` or something inside it, past the
+  // filter's own screens. A button covered by something else (a page under the stories)
+  // can't be the one you'd tap.
+  function onTop(el) {
+    const r = el.getBoundingClientRect();
+    const hit = elementBelow(r.left + r.width / 2, r.top + r.height / 2);
+    return !!hit && (hit === el || el.contains(hit));
+  }
+
   // The shown control with one of `labels` closest to `anchor` (sharing its deepest
-  // ancestor), outside posts.
+  // ancestor), outside posts, on screen and not covered.
   function controlNear(labels, anchor, { notOnTop = false } = {}) {
     const ancestors = [];
     for (let n = anchor; n; n = n.parentElement) ancestors.push(n);
     let best = null;
     let bestAt = Infinity;
     for (const el of document.querySelectorAll('[aria-label]')) {
-      if (!labels.has(normalize(el.getAttribute('aria-label'))) || el.closest(STRUCTURE.post) || !isShown(el)) continue;
+      if (!labels.has(normalize(el.getAttribute('aria-label'))) || el.closest(STRUCTURE.post) || !onScreen(el)) continue;
       const control = el.closest('button, [role="button"], a') || el;
       if (control === anchor || (notOnTop && control.getBoundingClientRect().top < window.innerHeight * 0.15)) continue;
+      if (!onTop(control)) continue;
       const at = ancestors.findIndex((a) => a.contains(control));
       if (at >= 0 && at < bestAt) {
         best = control;
@@ -671,10 +787,89 @@ function start() {
     return best;
   }
 
+  // Instagram's tap zone on a phone, next to the label in the same story: an empty button
+  // with no label, at least STORIES.zone.minHeight of the screen tall, on the right of the
+  // screen (or the left, going back). Of those, the biggest.
+  function tapZone(label, back) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    for (let n = label.parentElement; n && n !== document.body && n !== root; n = n.parentElement) {
+      let best = null;
+      let bestArea = 0;
+      for (const b of n.querySelectorAll('button')) {
+        if (b.hasAttribute('aria-label') || b.textContent.trim() || b.querySelector('svg, img, video, button') || b.closest('a[href]')) continue;
+        const r = b.getBoundingClientRect();
+        const middle = r.left + r.width / 2;
+        if (r.height < h * STORIES.zone.minHeight || r.right <= 0 || r.left >= w) continue;
+        if (back ? middle > w * STORIES.zone.side : middle < w * (1 - STORIES.zone.side)) continue;
+        if (r.width * r.height > bestArea) {
+          best = b;
+          bestArea = r.width * r.height;
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
   function press(el) {
     if (el instanceof HTMLElement) el.click();
     else el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   }
+
+  // --- stories, for the report -----------------------------------------------------
+  // Instagram's phone viewer reads your fingers its own way: a finger down pauses the
+  // story, and held 200 ms or more it was a pause, not a tap (no next story); a swipe counts
+  // only if it took 500 ms at most; a touch the browser calls off (touchcancel) leaves the
+  // story paused and the next tap is taken for the end of that pause. So the timeline notes
+  // a tap or a swipe of yours that didn't move the story, with what Instagram will have
+  // made of it, and touches called off. Only kinds and numbers, never what's on screen.
+  const STORY_TAP_MS = 200;
+  const STORY_SWIPE_MS = 500;
+  let gestureLoggedAt = 0;
+  let cancelLoggedAt = 0;
+
+  function noteStoryGesture(start, x, y) {
+    const held = Date.now() - start.at;
+    const dx = Math.round(x - start.x);
+    const dy = Math.round(y - start.y);
+    const tap = Math.max(Math.abs(dx), Math.abs(dy)) < TAP_PX;
+    if (!tap && Math.abs(dy) > Math.abs(dx)) return; // up or down: the reply box, or closing
+    const kind = tap ? `tap on the ${start.x < window.innerWidth / 3 ? 'left' : 'right'}` : `swipe to the ${dx < 0 ? 'left' : 'right'}`;
+    let why;
+    if (tap) why = held >= STORY_TAP_MS ? `held ${held} ms: Instagram takes that for a pause, not a tap` : `${held} ms`;
+    else why = held > STORY_SWIPE_MS ? `${held} ms: Instagram only takes swipes of up to ${STORY_SWIPE_MS} ms` : `${held} ms, ${Math.abs(dx)} px`;
+    setTimeout(() => {
+      if (page !== 'stories' || location.pathname !== start.path || Date.now() - gestureLoggedAt < 1000) return;
+      gestureLoggedAt = Date.now();
+      log.add(`stories: your ${kind} didn't move the story (${why})`);
+    }, 800);
+  }
+
+  window.addEventListener(
+    'touchcancel',
+    (e) => {
+      if (!e.isTrusted || page !== 'stories' || Date.now() - cancelLoggedAt < 5000) return;
+      cancelLoggedAt = Date.now();
+      log.add('stories: the browser called a touch off; Instagram may take your next tap for the end of a pause');
+    },
+    { capture: true, passive: true },
+  );
+
+  // The page busy: a timer due every BUSY_TICK_MS ran much later, so the phone was busy (with
+  // Instagram, or the filter). On a story, a quick tap then reads as a long press.
+  const BUSY_TICK_MS = 250;
+  let tickAt = Date.now();
+  let busyLoggedAt = 0;
+  setInterval(() => {
+    const now = Date.now();
+    const late = now - tickAt - BUSY_TICK_MS;
+    tickAt = now;
+    if (late < 300 || document.hidden || now - busyLoggedAt < 5000) return;
+    busyLoggedAt = now;
+    log.add(`page busy for ${late} ms on ${pageLabel()}`);
+  }, BUSY_TICK_MS);
+  document.addEventListener('visibilitychange', () => (tickAt = Date.now()));
 
   // --- pinch to zoom ----------------------------------------------------------------
   // Instagram's page tells the browser it can't be zoomed (maximum-scale=1 in its viewport
@@ -694,7 +889,8 @@ function start() {
     return kept.concat(`maximum-scale=${ZOOM_MAX}`, 'user-scalable=yes').join(', ');
   }
 
-  function fixViewport() {
+  function fixViewport(quiet) {
+    if (Date.now() < zoomHeldUntil) return; // a zoom being undone, see resetZoom()
     const meta = document.querySelector('meta[name="viewport"]');
     if (!meta) return;
     const content = meta.getAttribute('content') || '';
@@ -703,9 +899,37 @@ function start() {
     const wanted = settings.pinchZoom && page !== 'create' ? zoomable(viewportOwn) : viewportOwn;
     if (content !== wanted) {
       meta.setAttribute('content', wanted);
-      log.add(settings.pinchZoom ? 'pinch to zoom: allowed' : "pinch to zoom: Instagram's setting back");
+      if (!quiet) log.add(settings.pinchZoom ? 'pinch to zoom: allowed' : "pinch to zoom: Instagram's setting back");
     }
     viewportSet = wanted;
+  }
+
+  // A zoom still on when the address changes (the next story, another page) is undone, the
+  // way a pinch springs back in Instagram's app. A page left zoomed in moves under your
+  // finger instead of taking a swipe, a tap lands somewhere else, and it stayed so on every
+  // page after. The browser zooms back when the tag's initial scale changes: the filter
+  // writes one of 1.01 for a moment, then Instagram's tag (zoom allowed) again.
+  const ZOOM_RESET_MS = 300;
+  let zoomHeldUntil = 0;
+
+  function resetZoom() {
+    const vv = window.visualViewport;
+    const meta = document.querySelector('meta[name="viewport"]');
+    if (!vv || !meta || !viewportOwn || !settings.pinchZoom || vv.scale < 1.05 || zoomHeldUntil) return;
+    const from = vv.scale.toFixed(1);
+    const kept = viewportOwn
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p && !/^(initial-scale|maximum-scale|user-scalable)\s*=/i.test(p));
+    const back = kept.concat('initial-scale=1.01', 'maximum-scale=1.01').join(', ');
+    meta.setAttribute('content', back);
+    viewportSet = back;
+    zoomHeldUntil = Date.now() + ZOOM_RESET_MS;
+    setTimeout(() => {
+      zoomHeldUntil = 0;
+      fixViewport(true);
+      log.add(`zoom ${from} undone (the address changed), now ${vv.scale.toFixed(1)}`);
+    }, ZOOM_RESET_MS);
   }
 
   // For the report: how far a two-finger touch zoomed, and what on the way up says how
@@ -810,7 +1034,11 @@ function start() {
   }
 
   // Puts the shield up or takes it down, as the screen says. Returns whether it's up.
+  // The page kind is read from the address first: in Safari the filter doesn't hear
+  // Instagram change the address, only sees it a moment later, and a story just opened from
+  // a profile, with its full-screen video, isn't a reel to shield.
   function updateShield() {
+    if (location.pathname !== lastPath) checkPath();
     const on = reelOnScreen();
     if (on !== shieldOn) {
       shieldOn = on;
@@ -1264,7 +1492,7 @@ function start() {
   }
   setInterval(checkPath, 300);
   setInterval(watchFeed, 500);
-  setInterval(checkStoryAds, 400); // an ad still showing after a skip, or the next one
+  setInterval(checkStoryAds, 200); // an ad sliding into the middle of the screen, or still there after a skip
   setInterval(watchReel, 300); // another reel taking the place of the one you opened
   setInterval(updateShield, 200); // a reel coming on screen, or leaving it
   window.addEventListener('scroll', () => !FREE_SWIPE_PAGES.includes(page) && watchReel(), { capture: true, passive: true }); // and right away

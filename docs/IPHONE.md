@@ -42,7 +42,7 @@ what you type, and sends nothing anywhere.
 post keeps its place as an empty card with a small grey label ("Reel hidden",
 "Suggestion hidden"), so the feed doesn't jump. Ads between stories are skipped
 by themselves, also when you go back through the stories. Two fingers zoom
-photos and stories.
+photos and stories (the next story opens at its normal size again).
 
 ## 5. A Home Screen icon, and a quick test
 Since iOS 26, a site added to the Home Screen can open **full screen as a web

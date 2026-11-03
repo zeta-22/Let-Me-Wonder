@@ -4,7 +4,7 @@
 // It holds data only (page addresses, CSS selectors, label texts), no logic.
 // README.md, section "Updating the filter", explains each part.
 
-export const RULES_VERSION = '2026.11.02g';
+export const RULES_VERSION = '2026.11.03a';
 
 // The switches in settings. `default` is the setting until you change it.
 // `blocked` is the message on the Blocked screen when this switch stops a page.
@@ -115,14 +115,18 @@ export const LABEL_RULES = [
   { label: 'caughtUp', toggle: 'suggested', hide: ['after'] },
 ];
 
-// Ads between stories are skipped with Instagram's own "next" control in the story
-// viewer, found by its label (or, if there's none, the right-arrow key). Never with the
-// ad's own buttons. Going back through stories (a tap on the left of the screen, a swipe
-// to the right, the left-arrow key), an ad is skipped backwards instead: with the
-// "previous" control next to the "next" one, or the left-arrow key.
+// Ads between stories are skipped with Instagram's own controls, never the ad's buttons.
+// On a computer: the "next" control in the story viewer, found by its label, or the
+// right-arrow key. On a phone, Instagram's story viewer has neither: the screen is a tap
+// zone of empty, unlabelled buttons (`zone`), at least `minHeight` of the screen tall, with
+// their middle in the outer `side` of the screen: the right for the next part, the left for
+// the one before. Going back through stories (a tap on the left of the screen, a swipe to
+// the right, the left-arrow key), an ad is skipped backwards instead: with the "previous"
+// control next to the "next" one, the left side of the tap zone, or the left-arrow key.
 export const STORIES = {
   nextLabels: ['Next', 'Avanti', 'Siguiente', 'Suivant', 'Weiter', 'Próximo', 'Volgende', 'Avançar'],
   previousLabels: ['Previous', 'Back', 'Indietro', 'Precedente', 'Anterior', 'Atrás', 'Précédent', 'Retour', 'Zurück', 'Vorige', 'Terug', 'Voltar'],
+  zone: { minHeight: 0.4, side: 0.4 },
 };
 
 // Label rules are skipped on these pages (a friend could write "Sponsored" in a DM; "Suggeriti

@@ -26,10 +26,11 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **Reels tab:** the bottom bar has no Reels button.
 - [ ] **Ads:** scroll about 30 posts; nothing marked *Sponsored*.
 - [ ] **Ads in stories:** watch several stories in a row; an ad (*Sponsorizzato*)
-      disappears by itself within a moment, and the story after it plays. Then tap
-      the left side to go back: you pass the ad again and land on the story before
-      it. If an ad stays, tap the settings button on the right edge and copy a
-      problem report.
+      disappears by itself within a moment (all its parts, if it has more than one),
+      and the story after it plays. Then tap the left side to go back: you pass the
+      ad again and land on the story before it. If an ad stays, it still plays and
+      moves on by itself, and your taps work on it; tap the settings button on the
+      right edge and copy a problem report.
 - [ ] **Locked filters:** in the settings, App (problem report, updates,
       reload) and Display work without the code; the Filters switches are grey
       until you enter it; a wrong code says so; after closing and reopening
@@ -58,9 +59,17 @@ screen and paste it to Claude, saying which item failed.
 - [ ] **DMs:** read, reply, send a photo.
 - [ ] **Stories:** tap one in the row at the top of Home. Watch it, close it,
       and you're back where you were in the feed; open another one.
+- [ ] **Going through stories:** quick taps on the right move on one story each,
+      also two taps in a row; a quick swipe to the left moves on to the next
+      person, to the right back to the one before; no story stands still after an
+      ad. (Instagram's own rules: a finger held a moment is a pause, not a tap, and
+      a slow swipe, over half a second, does nothing. If one of yours didn't work,
+      copy a problem report right then: it says which, and why.)
 - [ ] **Search:** find an account by name and open their profile.
 - [ ] **Pinch to zoom:** two fingers zoom a photo in the feed and a story; two
-      fingers the other way zoom back out. (Display switch "Pinch to zoom".)
+      fingers the other way zoom back out; the next story (or page) opens at its
+      normal size again. A quick double tap never zooms. (Display switch "Pinch to
+      zoom".)
 - [ ] **Your profile** opens normally.
 - [ ] **Posting:** the **+** button lets you post a photo, and make a story,
       with all the tools Instagram's website offers there (the website has fewer

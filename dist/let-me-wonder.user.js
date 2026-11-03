@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Let Me Wonder
 // @namespace    https://github.com/zeta-22/Let-Me-Wonder
-// @version      0.4.7
+// @version      0.4.8
 // @description  Instagram without Reels, Explore, suggestions and ads.
 // @match        https://www.instagram.com/*
 // @match        https://instagram.com/*
@@ -17,7 +17,7 @@
 // Built from src/filter/ by scripts/build-filter.mjs. Edit those files, not this one.
 (() => {
   // src/filter/rules.js
-  var RULES_VERSION = "2026.11.02g";
+  var RULES_VERSION = "2026.11.03a";
   var TOGGLES = [
     { id: "reelsTab", label: "Reels tab and Reels pages", default: true, blocked: "Reels are switched off." },
     // Off by default: reels from people you follow stay in the feed (suggested ones are
@@ -111,7 +111,8 @@
   ];
   var STORIES = {
     nextLabels: ["Next", "Avanti", "Siguiente", "Suivant", "Weiter", "Pr\xF3ximo", "Volgende", "Avan\xE7ar"],
-    previousLabels: ["Previous", "Back", "Indietro", "Precedente", "Anterior", "Atr\xE1s", "Pr\xE9c\xE9dent", "Retour", "Zur\xFCck", "Vorige", "Terug", "Voltar"]
+    previousLabels: ["Previous", "Back", "Indietro", "Precedente", "Anterior", "Atr\xE1s", "Pr\xE9c\xE9dent", "Retour", "Zur\xFCck", "Vorige", "Terug", "Voltar"],
+    zone: { minHeight: 0.4, side: 0.4 }
   };
   var LABEL_SKIP_PAGES = ["direct", "login", "create"];
   var STRUCTURE = {
@@ -750,7 +751,7 @@
   var filter_default = "/* Let Me Wonder: page styles that don't depend on Instagram's layout.\n   Rules that do (selectors, labels) live in rules.js and are added next to this. */\n\n/* While the Blocked screen is up, the page under it is hidden. */\nhtml[data-lmw-blocked] body {\n  visibility: hidden !important;\n}\n";
 
   // src/filter/filter.js
-  var VERSION = true ? "0.4.7" : "dev";
+  var VERSION = true ? "0.4.8" : "dev";
   var SETTINGS_KEY = "lmw-settings-v1";
   var FROM_PATH_KEY = "lmw-from-path";
   var HIDE_ATTR2 = "data-lmw-hide";
@@ -759,8 +760,8 @@
   var HIDE_CSS = "{display:none!important}";
   var INVISIBLE_CSS = "{visibility:hidden!important;pointer-events:none!important}";
   var SMALL_COVER_PX = 36;
-  var STORY_RETRY_MS = 1500;
-  var STORY_MAX_TRIES = 3;
+  var STORY_SETTLE_MS = 700;
+  var STORY_MAX_SKIPS = 8;
   var STORY_WAY_MS = 3e3;
   var SWIPE_PX = 50;
   var REEL_PAGES = ["reel", "post"];
@@ -856,7 +857,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       checkPath();
     }
     function buildCss() {
-      const parts = [filter_default];
+      const parts = [filter_default, 'html[data-lmw-on~="pinchZoom"]:not([data-lmw-page="create"]){touch-action:manipulation}'];
       for (const t of TOGGLES) {
         const scope = `html[data-lmw-on~="${t.id}"]`;
         const marked = `[${HIDE_ATTR2}~="${t.id}"]`;
@@ -903,7 +904,10 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
         notePage();
         return;
       }
-      if (lastPath !== null) navCount++;
+      if (lastPath !== null) {
+        navCount++;
+        resetZoom();
+      }
       lastPath = path;
       pathSince = Date.now();
       const next = pageOf(path);
@@ -1159,7 +1163,17 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       if (node.matches(STRUCTURE.post)) into.add(node);
       else for (const post of node.querySelectorAll(STRUCTURE.post)) into.add(post);
     }
+    let slowLoggedAt = 0;
     function onMutations(records) {
+      const began = performance.now();
+      handleMutations(records);
+      const took = Math.round(performance.now() - began);
+      if (took >= 50 && Date.now() - slowLoggedAt > 5e3) {
+        slowLoggedAt = Date.now();
+        log.add(`filter: ${took} ms for one batch of page changes`);
+      }
+    }
+    function handleMutations(records) {
       checkPath();
       if (root.getAttribute("data-lmw-on") === null) applyRootState();
       const added = /* @__PURE__ */ new Set();
@@ -1191,14 +1205,36 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     function noteWay(back) {
       if (page === "stories") storyWay = { back, at: Date.now() };
     }
-    window.addEventListener("pointerdown", (e) => pointerStart = e.isTrusted ? { x: e.clientX, y: e.clientY } : null, true);
+    function startOf(x, y) {
+      return { x, y, at: Date.now(), path: location.pathname };
+    }
+    function endOf(start2, x, y, finger) {
+      const dx = x - start2.x;
+      const swiped = Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(y - start2.y);
+      noteWay(swiped ? dx > 0 : start2.x < window.innerWidth / 3);
+      if (finger && page === "stories") noteStoryGesture(start2, x, y);
+    }
+    const passiveCapture = { capture: true, passive: true };
+    window.addEventListener(
+      "touchstart",
+      (e) => pointerStart = e.isTrusted && e.touches.length === 1 ? startOf(e.touches[0].clientX, e.touches[0].clientY) : null,
+      passiveCapture
+    );
+    window.addEventListener(
+      "touchend",
+      (e) => {
+        if (!e.isTrusted || !pointerStart || e.touches.length || !e.changedTouches.length) return;
+        endOf(pointerStart, e.changedTouches[0].clientX, e.changedTouches[0].clientY, true);
+        pointerStart = null;
+      },
+      passiveCapture
+    );
+    window.addEventListener("pointerdown", (e) => e.isTrusted && e.pointerType !== "touch" && (pointerStart = startOf(e.clientX, e.clientY)), true);
     window.addEventListener(
       "pointerup",
       (e) => {
-        if (!e.isTrusted || !pointerStart) return;
-        const dx = e.clientX - pointerStart.x;
-        const swiped = Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(e.clientY - pointerStart.y);
-        noteWay(swiped ? dx > 0 : pointerStart.x < window.innerWidth / 3);
+        if (!e.isTrusted || e.pointerType === "touch" || !pointerStart) return;
+        endOf(pointerStart, e.clientX, e.clientY, false);
         pointerStart = null;
       },
       true
@@ -1210,39 +1246,75 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       },
       true
     );
-    function isShown(el2) {
-      return el2.getClientRects().length > 0 && getComputedStyle(el2).visibility !== "hidden";
+    function onScreen(el2) {
+      try {
+        if (el2.checkVisibility && !el2.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return false;
+      } catch (e) {
+      }
+      if (getComputedStyle(el2).visibility === "hidden") return false;
+      const r = el2.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return false;
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      return x > 0 && x < window.innerWidth && y > 0 && y < window.innerHeight;
+    }
+    function adOnScreen(label) {
+      if (!onScreen(label)) return false;
+      const r = viewerOf(label).getBoundingClientRect();
+      return Math.abs(r.left + r.width / 2 - window.innerWidth / 2) < window.innerWidth * 0.12;
     }
     function checkStoryAds() {
       if (page !== "stories" || !settings.ads || blocked) return;
       for (const label of storyLabels) {
         if (!label.isConnected) storyLabels.delete(label);
-        else if (isShown(label)) return skipStoryAd(label);
+        else if (adOnScreen(label)) return skipStoryAd(label);
       }
+    }
+    function storyWays(label, back) {
+      const next = controlNear(nextLabels, label);
+      const control = back ? next && controlNear(previousLabels, next, { notOnTop: true }) : next;
+      const zone = tapZone(label, back);
+      const key = back ? "ArrowLeft" : "ArrowRight";
+      return [
+        control && { name: "button", how: `the ${back ? "previous" : "next"} button`, run: () => press(control) },
+        zone && { name: "zone", how: `Instagram's tap zone on the ${back ? "left" : "right"}`, run: () => press(zone) },
+        {
+          name: "key",
+          how: `the ${back ? "left" : "right"}-arrow key`,
+          run: () => label.dispatchEvent(new KeyboardEvent("keydown", { key, code: key, keyCode: back ? 37 : 39, bubbles: true }))
+        }
+      ].filter(Boolean);
     }
     function skipStoryAd(label) {
       const now = Date.now();
       const same = storyAd && storyAd.label === label;
-      if (skipping || same && now - storyAd.at < STORY_RETRY_MS) return;
-      const retry = same && storyAd.path === location.pathname;
-      const tries = retry ? storyAd.tries + 1 : 1;
-      if (tries > STORY_MAX_TRIES) return;
-      const back = retry ? storyAd.back : storyWay.back && now - storyWay.at < STORY_WAY_MS;
-      storyAd = { label, path: location.pathname, tries, at: now, back };
+      if (skipping || same && (storyAd.done || now - storyAd.at < STORY_SETTLE_MS)) return;
+      const ad = same ? storyAd : { label, back: storyWay.back && now - storyWay.at < STORY_WAY_MS, tried: /* @__PURE__ */ new Set(), skips: 0, way: null, done: false };
+      let note = "";
+      if (same && location.pathname === ad.path) {
+        ad.tried.add(ad.way);
+        note = ", the last way did nothing";
+      } else if (same) {
+        note = ", its next part";
+      }
+      const ways = storyWays(label, ad.back).filter((w) => !ad.tried.has(w.name));
+      const way = ways.find((w) => w.name === ad.way) || ways[0];
+      if (!way || ad.skips >= STORY_MAX_SKIPS) {
+        ad.done = true;
+        storyAd = ad;
+        log.add("story ad: couldn't skip it, left it to Instagram (it moves on by itself, and your taps work)");
+        return;
+      }
+      Object.assign(ad, { path: location.pathname, at: now, way: way.name, skips: ad.skips + 1 });
+      storyAd = ad;
       if (!storyOutlineKept) {
         storyOutlineKept = true;
         log.note("the story viewer when an ad showed", outlineOf(viewerOf(label)));
       }
-      pauseMedia();
-      const next = controlNear(nextLabels, label);
-      const control = back ? next && controlNear(previousLabels, next, { notOnTop: true }) : next;
-      const key = back ? "ArrowLeft" : "ArrowRight";
-      const how = control ? `the ${back ? "previous" : "next"} button` : `the ${back ? "left" : "right"}-arrow key`;
-      log.add(`story ad: skipped${back ? " backwards" : ""} with ${how}${tries > 1 ? `, try ${tries}` : ""}`);
+      log.add(`story ad: skipped${ad.back ? " backwards" : ""} with ${way.how}${note}`);
       skipping = true;
       try {
-        if (control) press(control);
-        else label.dispatchEvent(new KeyboardEvent("keydown", { key, code: key, keyCode: back ? 37 : 39, bubbles: true }));
+        way.run();
       } finally {
         skipping = false;
       }
@@ -1254,15 +1326,21 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       }
       return node;
     }
+    function onTop(el2) {
+      const r = el2.getBoundingClientRect();
+      const hit = elementBelow(r.left + r.width / 2, r.top + r.height / 2);
+      return !!hit && (hit === el2 || el2.contains(hit));
+    }
     function controlNear(labels, anchor, { notOnTop = false } = {}) {
       const ancestors = [];
       for (let n = anchor; n; n = n.parentElement) ancestors.push(n);
       let best = null;
       let bestAt = Infinity;
       for (const el2 of document.querySelectorAll("[aria-label]")) {
-        if (!labels.has(normalize2(el2.getAttribute("aria-label"))) || el2.closest(STRUCTURE.post) || !isShown(el2)) continue;
+        if (!labels.has(normalize2(el2.getAttribute("aria-label"))) || el2.closest(STRUCTURE.post) || !onScreen(el2)) continue;
         const control = el2.closest('button, [role="button"], a') || el2;
         if (control === anchor || notOnTop && control.getBoundingClientRect().top < window.innerHeight * 0.15) continue;
+        if (!onTop(control)) continue;
         const at = ancestors.findIndex((a) => a.contains(control));
         if (at >= 0 && at < bestAt) {
           best = control;
@@ -1271,10 +1349,72 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       }
       return best;
     }
+    function tapZone(label, back) {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      for (let n = label.parentElement; n && n !== document.body && n !== root; n = n.parentElement) {
+        let best = null;
+        let bestArea = 0;
+        for (const b of n.querySelectorAll("button")) {
+          if (b.hasAttribute("aria-label") || b.textContent.trim() || b.querySelector("svg, img, video, button") || b.closest("a[href]")) continue;
+          const r = b.getBoundingClientRect();
+          const middle = r.left + r.width / 2;
+          if (r.height < h * STORIES.zone.minHeight || r.right <= 0 || r.left >= w) continue;
+          if (back ? middle > w * STORIES.zone.side : middle < w * (1 - STORIES.zone.side)) continue;
+          if (r.width * r.height > bestArea) {
+            best = b;
+            bestArea = r.width * r.height;
+          }
+        }
+        if (best) return best;
+      }
+      return null;
+    }
     function press(el2) {
       if (el2 instanceof HTMLElement) el2.click();
       else el2.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     }
+    const STORY_TAP_MS = 200;
+    const STORY_SWIPE_MS = 500;
+    let gestureLoggedAt = 0;
+    let cancelLoggedAt = 0;
+    function noteStoryGesture(start2, x, y) {
+      const held = Date.now() - start2.at;
+      const dx = Math.round(x - start2.x);
+      const dy = Math.round(y - start2.y);
+      const tap = Math.max(Math.abs(dx), Math.abs(dy)) < TAP_PX;
+      if (!tap && Math.abs(dy) > Math.abs(dx)) return;
+      const kind = tap ? `tap on the ${start2.x < window.innerWidth / 3 ? "left" : "right"}` : `swipe to the ${dx < 0 ? "left" : "right"}`;
+      let why;
+      if (tap) why = held >= STORY_TAP_MS ? `held ${held} ms: Instagram takes that for a pause, not a tap` : `${held} ms`;
+      else why = held > STORY_SWIPE_MS ? `${held} ms: Instagram only takes swipes of up to ${STORY_SWIPE_MS} ms` : `${held} ms, ${Math.abs(dx)} px`;
+      setTimeout(() => {
+        if (page !== "stories" || location.pathname !== start2.path || Date.now() - gestureLoggedAt < 1e3) return;
+        gestureLoggedAt = Date.now();
+        log.add(`stories: your ${kind} didn't move the story (${why})`);
+      }, 800);
+    }
+    window.addEventListener(
+      "touchcancel",
+      (e) => {
+        if (!e.isTrusted || page !== "stories" || Date.now() - cancelLoggedAt < 5e3) return;
+        cancelLoggedAt = Date.now();
+        log.add("stories: the browser called a touch off; Instagram may take your next tap for the end of a pause");
+      },
+      { capture: true, passive: true }
+    );
+    const BUSY_TICK_MS = 250;
+    let tickAt = Date.now();
+    let busyLoggedAt = 0;
+    setInterval(() => {
+      const now = Date.now();
+      const late = now - tickAt - BUSY_TICK_MS;
+      tickAt = now;
+      if (late < 300 || document.hidden || now - busyLoggedAt < 5e3) return;
+      busyLoggedAt = now;
+      log.add(`page busy for ${late} ms on ${pageLabel()}`);
+    }, BUSY_TICK_MS);
+    document.addEventListener("visibilitychange", () => tickAt = Date.now());
     const ZOOM_MAX = 5;
     let viewportOwn = null;
     let viewportSet = null;
@@ -1283,7 +1423,8 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       const kept = content.split(",").map((p) => p.trim()).filter((p) => p && !/^(maximum-scale|user-scalable)\s*=/i.test(p));
       return kept.concat(`maximum-scale=${ZOOM_MAX}`, "user-scalable=yes").join(", ");
     }
-    function fixViewport() {
+    function fixViewport(quiet) {
+      if (Date.now() < zoomHeldUntil) return;
       const meta = document.querySelector('meta[name="viewport"]');
       if (!meta) return;
       const content = meta.getAttribute("content") || "";
@@ -1291,9 +1432,27 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       const wanted = settings.pinchZoom && page !== "create" ? zoomable(viewportOwn) : viewportOwn;
       if (content !== wanted) {
         meta.setAttribute("content", wanted);
-        log.add(settings.pinchZoom ? "pinch to zoom: allowed" : "pinch to zoom: Instagram's setting back");
+        if (!quiet) log.add(settings.pinchZoom ? "pinch to zoom: allowed" : "pinch to zoom: Instagram's setting back");
       }
       viewportSet = wanted;
+    }
+    const ZOOM_RESET_MS = 300;
+    let zoomHeldUntil = 0;
+    function resetZoom() {
+      const vv = window.visualViewport;
+      const meta = document.querySelector('meta[name="viewport"]');
+      if (!vv || !meta || !viewportOwn || !settings.pinchZoom || vv.scale < 1.05 || zoomHeldUntil) return;
+      const from = vv.scale.toFixed(1);
+      const kept = viewportOwn.split(",").map((p) => p.trim()).filter((p) => p && !/^(initial-scale|maximum-scale|user-scalable)\s*=/i.test(p));
+      const back = kept.concat("initial-scale=1.01", "maximum-scale=1.01").join(", ");
+      meta.setAttribute("content", back);
+      viewportSet = back;
+      zoomHeldUntil = Date.now() + ZOOM_RESET_MS;
+      setTimeout(() => {
+        zoomHeldUntil = 0;
+        fixViewport(true);
+        log.add(`zoom ${from} undone (the address changed), now ${vv.scale.toFixed(1)}`);
+      }, ZOOM_RESET_MS);
     }
     window.addEventListener(
       "touchstart",
@@ -1355,6 +1514,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
       return r.height >= window.innerHeight * 0.7 && r.width >= window.innerWidth * 0.8 ? video : null;
     }
     function updateShield() {
+      if (location.pathname !== lastPath) checkPath();
       const on = reelOnScreen();
       if (on !== shieldOn) {
         shieldOn = on;
@@ -1760,7 +1920,7 @@ ${small}{height:${SMALL_COVER_PX}px!important;min-height:0!important;max-height:
     }
     setInterval(checkPath, 300);
     setInterval(watchFeed, 500);
-    setInterval(checkStoryAds, 400);
+    setInterval(checkStoryAds, 200);
     setInterval(watchReel, 300);
     setInterval(updateShield, 200);
     window.addEventListener("scroll", () => !FREE_SWIPE_PAGES.includes(page) && watchReel(), { capture: true, passive: true });

@@ -73,12 +73,22 @@ the moment it starts loading, and works in five layers:
    story or a post from the feed. A test switch, **Small boxes for hidden
    posts** (off by default), shrinks them to a small box and asks Instagram to
    measure the feed again; if Instagram doesn't, the feed jumps, so switch it off.
-5. **Ads between stories.** A story with the *Sponsored* label is paused and
-   skipped with the story viewer's own controls (or the arrow keys), never with
-   the ad's buttons. It's skipped the way you were going: forward, or, if you
-   were going back (a tap on the left of the screen, a swipe to the right), back
-   to the story before the ad. On stories, the settings button sits on the right
-   edge, so you can copy a problem report while an ad is on screen.
+5. **Ads between stories.** A story with the *Sponsored* label, on screen, is
+   skipped with the story viewer's own controls, never with the ad's buttons. On a
+   phone Instagram's viewer has no labelled "Next" button and no arrow keys: the
+   story is covered by a tap zone of empty buttons, and the filter presses the one
+   on the right, as your finger would. On a computer it's the "Next" button, or
+   the arrow key. When one way leaves the ad where it was, the next is tried; an ad
+   in several parts is moved through. It's skipped the way you were going: forward,
+   or, if you were going back (a tap on the left of the screen, a swipe to the
+   right), back to the story before the ad. Nothing is paused (on a phone,
+   Instagram never starts a story someone else paused again), and only an ad in
+   the middle of the screen counts, not one drawn next to it or sliding out. If no
+   way works, the ad plays and moves on by itself, and your taps work. On stories,
+   the settings button sits on the right edge, so you can copy a problem report
+   while an ad is on screen; the report notes a tap or swipe of yours that didn't
+   move the story, and why (Instagram takes a finger held 200 ms for a pause, and
+   only swipes of up to half a second).
 
 **Making a post or a story** (`/create/...`, `/stories/create/`): the filter stays out
 of the way. No labels there (a "Suggeriti per te" list is people to tag, and it used to
@@ -89,7 +99,10 @@ report. The tools are the ones Instagram's website has, fewer than its app's.
 **Pinch to zoom.** Instagram's page tells the browser it can't be zoomed
 (`maximum-scale=1` in its viewport tag), so two fingers did nothing, on the web too.
 With the Display switch "Pinch to zoom photos and stories" (on by default) the filter
-allows zooming up to 5 times; the rest of Instagram's tag stays as it is.
+allows zooming up to 5 times; the rest of Instagram's tag stays as it is. Only two fingers
+zoom (`touch-action: manipulation`): a quick double tap, going through stories, stays two
+taps. A zoom still on when the address changes (the next story, another page) is undone,
+the way a pinch springs back in Instagram's app.
 
 **The filters are locked with a code**, the same on every phone, so turning the
 filter off takes a deliberate step. The settings have three parts: **App** (copy a

@@ -898,6 +898,80 @@ Published, as you said: merged to `main` for the iPhone (PR #19), and Android (E
 channel `preview`, update group `9eda74e9`), with the Expo token you gave in this chat (kept
 in the session's scratch folder, never in the repo).
 
+### Stage 3, round 19: stories that stand still, swipes and taps that don't take (2026-11-03)
+What you said (on 0.4.7, iPhone and Android): watching stories, sometimes a swipe doesn't
+move on to the next person, sometimes even a tap doesn't move to the next story, and
+sometimes an ad shows and then everything stands still on it (no swipe, no tap): only
+leaving works, and Instagram is odd afterwards.
+
+What I did: read the code of Instagram's story viewer for phones on instagram.com
+(`PolarisMobileStories`, `PolarisMobileStoryEventZone`, `usePolarisStoryVideoPlaybackControl`,
+`PolarisStoryActions`), and rebuilt it in the fake (`openPhoneStories()`), since the old
+fake viewer was the computer's one.
+
+How Instagram's phone viewer works:
+- No "Next" / "Previous" button with a label and no arrow keys (those belong to its
+  computer viewer, `PolarisDesktopStoryEventZone`). The story is covered by a tap zone of
+  four empty, unlabelled buttons: two on the right (next part), two on the left (previous).
+- A finger down pauses the story, and it plays again when lifted. Held 200 ms or more, it
+  was a pause: the touch's end is cancelled, so no click, no next story. A swipe counts only
+  if it took 500 ms at most (sideways: the next or previous person; up: the ad's link or the
+  reply box; down: close). There's no handler for a touch the browser calls off.
+- On a phone, a story video paused by anyone but Instagram is never started again by it: it
+  only moves on when the video ends, or when you tap.
+- The address is `/stories/<name>/<item>/` for every story, ads included, and it changes at
+  every part.
+
+What the filter did wrong (each reproduced in the fake, with the real viewer's rules):
+1. **Ads were never skipped on a phone.** The filter looked for a "Next" button (none) and
+   then sent the right-arrow key (ignored). So the ad stayed on screen.
+2. **And it paused every video on the page, three times.** On a phone nothing starts a
+   paused story again, so the ad stood still for good, and a story you had just moved to
+   from it could freeze too (the filter skipped again as the ad slid out).
+3. **An ad that wasn't on screen counted.** Any "Sponsorizzato" with a box did: one drawn
+   next to the screen, sliding out, or kept hidden. The filter then paused and "skipped"
+   the friend's story you were watching.
+4. **Your swipes weren't seen.** The filter read your way through stories from pointer
+   events, but once a finger moves sideways the browser calls the pointer off, so a swipe to
+   the right (back) was never noted, and an ad met going back was skipped forward.
+5. **Pinch to zoom (0.3.7) made the page zoomable**, so on the iPhone two quick taps can be
+   taken for a double tap to zoom, with no tap for Instagram; and a zoom left on stayed on
+   every story and page after, where a swipe moves the zoomed page instead of the stories.
+
+Fixes (0.4.8):
+1. Story ads are skipped with Instagram's own controls, tried in turn: its labelled button
+   (computer), its **tap zone** on the right (phone; `STORIES.zone` in `rules.js`: an
+   empty, unlabelled button at least 40% of the screen tall, in the outer 40%), then the
+   arrow key. When one leaves the ad where it was, the next is tried; an ad in several
+   parts is moved through the same way; going back, the left side. If nothing works, the ad
+   is left alone: it plays, Instagram moves on by itself, and your taps work.
+2. **Nothing is paused** on stories any more.
+3. Only an ad **on screen** counts: its label shown (also not faded out), its middle on the
+   screen, in a story in the middle of the screen. After a skip it waits 0.7 s for the
+   story to change (Instagram slides the old one out).
+4. Your taps and swipes are read from touch events (a mouse from pointer events).
+5. With pinch to zoom: `touch-action: manipulation` on the page (two fingers zoom, a double
+   tap doesn't), and a zoom still on when the address changes (the next story, another page)
+   is undone, like a pinch springs back in Instagram's app.
+6. The reel shield reads the page kind from the address before deciding (in Safari the
+   filter only sees an address change a moment later): a story opened from a profile is
+   never shielded.
+7. The problem report now notes, on stories: a tap or a swipe of yours that didn't move the
+   story, and what Instagram made of it ("held 350 ms: Instagram takes that for a pause",
+   "800 ms: Instagram only takes swipes of up to 500 ms"); a touch the browser called off;
+   the page busy for 300 ms or more (then a quick tap reads as a long press); the filter
+   taking 50 ms or more on one batch of page changes; a zoom undone.
+
+Tests: on the phone viewer, an ad in two parts is skipped with the tap zone, and the story
+after it isn't, with no video paused and the ad's link untouched; going back through it lands
+on the story before; an ad drawn just off the screen is left alone; real finger taps and
+swipes (CDP touch) move the stories, a slow swipe and a held tap don't, and the report says
+why; double-tap zoom off, a zoom undone on the next story. All five fail on 0.4.7. 73 pass.
+
+What I can't check from here: logged-in stories on your phones. If something still sticks,
+copy a problem report right there: the new lines say what your finger did and what the
+filter did.
+
 ### Stage 3: Tuning (together, a few days)
 - You use both phones normally and send "Report a problem" outlines.
 - I fix `rules.js` (or the engine) and re-run all the automatic checks.

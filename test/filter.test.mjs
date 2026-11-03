@@ -192,6 +192,126 @@ test('a friend’s story is never skipped, even with an ad hidden in the feed un
   assert.doesNotMatch(await page.evaluate(() => window.__LMW__.buildReport()), /story ad/);
 });
 
+// --- Instagram's story viewer on a phone (see openPhoneStories() in the fake) -----------
+// Real finger touches (CDP), like on the phone: a tap at (x, y), held `ms`.
+async function fingerTap(page, x, y, ms = 40) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  await page.waitForTimeout(ms);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+}
+
+// A finger swipe sideways from fromX to toX at height y, taking about `ms`.
+async function fingerSwipeX(page, fromX, toX, ms = 150, y = 420) {
+  const cdp = await page.context().newCDPSession(page);
+  const touch = (type, x) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const steps = 6;
+  await touch('touchStart', fromX);
+  for (let i = 1; i <= steps; i++) {
+    await page.waitForTimeout(ms / steps);
+    await touch('touchMove', fromX + ((toX - fromX) * i) / steps);
+  }
+  await touch('touchEnd');
+}
+
+const phone = (page) => page.evaluate(() => ({ ...window.fakePhone, path: location.pathname }));
+const RIGHT = 330; // on the right of the phone's screen (390 px wide)
+const LEFT = 40;
+
+test('on a phone, a story ad is skipped with Instagram’s own tap zone, all its parts, and nothing is paused', async () => {
+  // 0.4.7 looked for a "Next" button and then pressed the arrow key: a phone's viewer has
+  // neither, so the ad stayed, and the filter paused it (and every video) three times.
+  const page = await open(browser, '/');
+  await page.evaluate(() => window.fake.openPhoneStories(0));
+  await fingerTap(page, RIGHT, 420); // friend_one, part 2
+  await page.waitForTimeout(300);
+  await fingerTap(page, RIGHT, 420); // on to the ad
+  await page.waitForFunction(() => window.fakeStory === 'friend_two', null, { timeout: 4000 });
+  await page.waitForTimeout(1500);
+  const fx = await phone(page);
+  assert.deepEqual(fx.trail, ['friend_one/111', 'friend_one/112', 'shop_brand/901', 'shop_brand/902', 'friend_two/222'], 'both parts of the ad, then the story after it, and no more');
+  assert.equal(fx.path, '/stories/friend_two/222/');
+  assert.equal(fx.pausedByOthers, 0, 'the filter paused no video');
+  assert.equal(fx.ctaOpened, 0);
+  assert.equal(await page.evaluate(() => window.fakeCtaTapped), undefined, 'the ad’s own link is never tapped');
+  assert.equal(await shieldShown(page), false, 'no shield over stories');
+  const report = await page.evaluate(() => window.__LMW__.buildReport());
+  assert.match(report, /story ad: skipped with Instagram's tap zone on the right\n.*story ad: skipped with Instagram's tap zone on the right, its next part/);
+  assert.doesNotMatch(report, /arrow key|couldn't skip/);
+  assert.ok(!/shop_brand|friend_two|friend_one/.test(report), 'no names in the report');
+});
+
+test('on a phone, going back through an ad lands on the story before it', async () => {
+  const page = await open(browser, '/');
+  await page.evaluate(() => window.fake.openPhoneStories(2)); // friend_two
+  await page.waitForTimeout(400);
+  await fingerTap(page, LEFT, 420); // back: the ad's last part, skipped backwards
+  await page.waitForFunction(() => window.fakeStory === 'friend_one', null, { timeout: 4000 });
+  await page.waitForTimeout(1500);
+  const fx = await phone(page);
+  assert.deepEqual(fx.trail, ['friend_two/222', 'shop_brand/902', 'shop_brand/901', 'friend_one/112'], 'through the ad, to friend_one’s last story');
+  assert.equal(fx.pausedByOthers, 0);
+  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /story ad: skipped backwards with Instagram's tap zone on the left/);
+});
+
+test('on a phone, an ad drawn just off the screen next to a friend’s story is left alone', async () => {
+  // 0.4.7 took any label with a box for an ad on screen: it "skipped" and paused the
+  // friend's story you were watching.
+  const page = await open(browser, '/?prerender=1');
+  await page.evaluate(() => window.fake.openPhoneStories(0));
+  await fingerTap(page, RIGHT, 420); // friend_one, part 2; the ad is drawn off the right edge
+  await page.waitForTimeout(1800);
+  const fx = await phone(page);
+  assert.deepEqual(fx.trail, ['friend_one/111', 'friend_one/112']);
+  assert.equal(fx.pausedByOthers, 0);
+  assert.doesNotMatch(await page.evaluate(() => window.__LMW__.buildReport()), /story ad/);
+});
+
+test('on a phone, your taps and swipes move the stories as Instagram means them, and the report says why one didn’t', async () => {
+  const page = await open(browser, '/');
+  await page.evaluate(() => window.fake.openPhoneStories(0));
+  await page.waitForTimeout(300);
+  await fingerTap(page, RIGHT, 420); // friend_one/112
+  await page.waitForTimeout(120);
+  await fingerSwipeX(page, 320, 60, 150); // a quick swipe to the left: the next reel (the ad, skipped)
+  await page.waitForFunction(() => window.fakeStory === 'friend_two', null, { timeout: 4000 });
+  await page.waitForTimeout(900);
+  await fingerSwipeX(page, 60, 320, 150); // to the right: back, through the ad
+  await page.waitForFunction(() => window.fakeStory === 'friend_one', null, { timeout: 4000 });
+  await page.waitForTimeout(1200);
+  let fx = await phone(page);
+  assert.equal(fx.path, '/stories/friend_one/112/');
+  assert.equal(fx.pausedByOthers, 0);
+  // Instagram's own rules: a swipe over 500 ms, or a tap held 200 ms, moves nothing.
+  await fingerSwipeX(page, 320, 60, 800);
+  await page.waitForTimeout(1000);
+  await fingerTap(page, RIGHT, 420, 350);
+  await page.waitForTimeout(1000);
+  fx = await phone(page);
+  assert.equal(fx.path, '/stories/friend_one/112/', 'Instagram took neither');
+  assert.equal(fx.ignoredTaps, 1);
+  const report = await page.evaluate(() => window.__LMW__.buildReport());
+  assert.match(report, /stories: your swipe to the left didn't move the story \(\d+ ms: Instagram only takes swipes of up to 500 ms\)/);
+  assert.match(report, /stories: your tap on the right didn't move the story \(held \d+ ms: Instagram takes that for a pause, not a tap\)/);
+});
+
+test('with pinch to zoom, no double-tap zoom (taps through stories stay taps), and a zoom is undone on the next story', async () => {
+  const page = await open(browser, '/');
+  const touchAction = () => page.evaluate(() => getComputedStyle(document.documentElement).touchAction);
+  assert.equal(await touchAction(), 'manipulation', 'panning and pinching, no double-tap zoom');
+  await page.evaluate(() => window.fake.openPhoneStories(0));
+  await page.waitForTimeout(300);
+  assert.ok((await pinch(page)) > 2, 'two fingers zoom the story');
+  await page.evaluate(() => document.querySelector('section [data-fx="zone-next"]').click()); // the next story
+  await page.waitForTimeout(700);
+  assert.ok((await page.evaluate(() => window.visualViewport.scale)) < 1.05, 'back to its size');
+  assert.match(await viewportTag(page), /maximum-scale=5/, 'and two fingers zoom again');
+  assert.match(await page.evaluate(() => window.__LMW__.buildReport()), /zoom 2\.\d undone \(the address changed\), now 1\.0/);
+
+  const off = await open(browser, '/', { settings: { pinchZoom: false } });
+  assert.equal(await off.evaluate(() => getComputedStyle(document.documentElement).touchAction), 'auto', 'Instagram’s own, with the switch off');
+});
+
 test('"Small boxes" test switch: hidden reels shrink, and a feed that measures again on a resize doesn’t jump', async () => {
   const settings = { feedReels: true, smallCovers: true };
   const page = await open(browser, '/?fake=virtual&remeasure=resize', { settings });

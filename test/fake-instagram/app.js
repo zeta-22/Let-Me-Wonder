@@ -580,10 +580,11 @@
     );
   }
 
-  // Stories in a row, with an ad between two friends' stories. The viewer has tap zones
-  // (left third: back, the rest: next), "Indietro" / "Avanti" controls at the sides, and
-  // answers the arrow keys. With &storynext=none there are no controls, only the tap
-  // zones and the keys. The ad has the advertiser, "Sponsorizzato" and its own link.
+  // Stories in a row, with an ad between two friends' stories, as Instagram's viewer on a
+  // computer has them: tap zones (left third: back, the rest: next), "Indietro" / "Avanti"
+  // controls at the sides, and the arrow keys. With &storynext=none there are no controls,
+  // only the tap zones and the keys. The ad has the advertiser, "Sponsorizzato" and its own
+  // link. The phone's viewer is openPhoneStories() below.
   const storyList = [
     { path: '/stories/friend_one/111/', who: 'friend_one' },
     { path: '/stories/shop_brand/999/', who: 'shop_brand', ad: true },
@@ -641,11 +642,188 @@
     });
   }
 
+  // Instagram's story viewer on a phone, as its own code builds it (PolarisMobileStories,
+  // PolarisMobileStoryEventZone, read on instagram.com, Nov 2026). The parts that matter:
+  // - One "reel" (a person's stories, or an ad) on screen at a time, in a <section> with a
+  //   <header>. Changing reel, the old one slides out while the new one slides in, both in
+  //   the page for 300 ms. The address is /stories/<name>/<item>/, also for an ad.
+  // - The tap zone: a div role=button over the story with four empty, unlabelled buttons,
+  //   two on the left (previous part) and two on the right (next part). No "Next" label,
+  //   and no arrow keys on a phone (those are the computer's viewer).
+  // - A finger down pauses the story; lifted, it plays again. Held 200 ms or more, it was a
+  //   pause: the touchend is cancelled, so there's no click and no next story.
+  // - A swipe counts only if it took 500 ms at most: sideways over 50 px (and under 100 px
+  //   up or down) changes reel, up opens the ad's link (or the reply box), down closes.
+  //   There's no touchcancel handler: a touch the browser calls off leaves its start behind.
+  // With &prerender=1 the next reel is also drawn, just off the right edge of the screen.
+  const phoneReels = [
+    { who: 'friend_one', items: ['111', '112'] },
+    { who: 'shop_brand', ad: true, items: ['901', '902'] },
+    { who: 'friend_two', items: ['222'] },
+  ];
+
+  function openPhoneStories(startReel) {
+    let reel = startReel || 0;
+    let item = 0;
+    let section = null;
+    const trail = [];
+    const fx = { moves: 0, pausedByOthers: 0, ctaOpened: 0, replyOpened: 0, ignoredTaps: 0, trail };
+    window.fakePhone = fx;
+    let ownPause = false;
+    // Every pause of a story's video that isn't the viewer's own (a finger down) is counted.
+    const realPause = HTMLMediaElement.prototype.pause;
+    HTMLMediaElement.prototype.pause = function () {
+      if (!ownPause && this.closest('[data-fx="story-page"]')) fx.pausedByOthers++;
+      return realPause.call(this);
+    };
+    const pathOf = () => `/stories/${phoneReels[reel].who}/${phoneReels[reel].items[item]}/`;
+    history.pushState({}, '', pathOf());
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<div data-fx="story-page" style="position:fixed;inset:0;background:#000;color:#fff;overflow:hidden"></div>',
+    );
+    const pageEl = document.querySelector('[data-fx="story-page"]');
+    const state = { touchStart: null, x: 0, y: 0, pauseStart: null };
+    const video = () => section && section.querySelector('video');
+    const play = () => {
+      const v = video();
+      if (v) v.play().catch(() => {});
+    };
+    const pause = () => {
+      const v = video();
+      if (!v || v.paused) return;
+      ownPause = true;
+      v.pause();
+      ownPause = false;
+    };
+    const note = () => {
+      trail.push(`${phoneReels[reel].who}/${phoneReels[reel].items[item]}`);
+      window.fakeStory = phoneReels[reel].who;
+    };
+
+    function build(at, offset) {
+      const r = phoneReels[at];
+      pageEl.insertAdjacentHTML(
+        'beforeend',
+        `<section data-fx="reel-${r.who}" style="position:absolute;inset:0;transition:transform 300ms linear;transform:translateX(${offset}%)">
+          <header style="position:absolute;top:10px;left:10px;z-index:2"><a href="/${r.who}/">${r.who}</a> <span>${r.ad ? 'Sponsorizzato' : '3 h'}</span></header>
+          <video muted playsinline style="position:absolute;inset:0;width:100%;height:100%"></video>
+          <div role="button" tabindex="0" data-fx="zone" style="position:absolute;inset:0">
+            <button data-fx="zone-prev" style="position:absolute;left:0;top:0;width:15%;height:100%;border:0;background:none"></button>
+            <button data-fx="zone-prev-2" style="position:absolute;left:15%;top:15%;width:15%;height:70%;border:0;background:none"></button>
+            <button data-fx="zone-next" style="position:absolute;right:0;top:0;width:15%;height:100%;border:0;background:none"></button>
+            <button data-fx="zone-next-2" style="position:absolute;right:15%;top:15%;width:55%;height:70%;border:0;background:none"></button>
+          </div>
+          ${r.ad ? '<a href="https://shop.example/buy" data-fx="story-cta" style="position:absolute;bottom:20px;left:30%;z-index:2">Scopri di più</a>' : ''}
+        </section>`,
+      );
+      return pageEl.lastElementChild;
+    }
+
+    function wire(s) {
+      const zone = s.querySelector('[data-fx="zone"]');
+      zone.addEventListener('touchstart', (e) => {
+        if (state.touchStart == null) {
+          state.touchStart = Date.now();
+          state.x = e.touches[0].clientX;
+          state.y = e.touches[0].clientY;
+        }
+        pause();
+        if (state.pauseStart == null) state.pauseStart = Date.now();
+      });
+      zone.addEventListener('touchend', (e) => {
+        if (e.touches.length === 0) {
+          if (state.pauseStart != null) {
+            play();
+            if (Date.now() - state.pauseStart >= 200) {
+              const t = e.changedTouches[0];
+              if (Math.abs(t.clientX - state.x) < 10 && Math.abs(t.clientY - state.y) < 10) fx.ignoredTaps++; // a tap, not a swipe
+              e.stopPropagation();
+              e.preventDefault();
+            }
+          }
+          state.pauseStart = null;
+        }
+        if (state.touchStart == null) return;
+        const took = Date.now() - state.touchStart;
+        const dx = e.changedTouches[0].clientX - state.x;
+        const dy = e.changedTouches[0].clientY - state.y;
+        state.touchStart = null;
+        if (took > 500) return;
+        if (Math.abs(dy) > 50 && Math.abs(dx) < 100) {
+          if (dy < 0) phoneReels[reel].ad ? fx.ctaOpened++ : fx.replyOpened++;
+          else history.back();
+        } else if (Math.abs(dy) < 100) {
+          if (dx < -50) toReel(1);
+          else if (dx > 50) toReel(-1);
+        }
+      });
+      for (const b of s.querySelectorAll('[data-fx^="zone-prev"]')) b.addEventListener('click', () => step(-1));
+      for (const b of s.querySelectorAll('[data-fx^="zone-next"]')) b.addEventListener('click', () => step(1));
+      const cta = s.querySelector('[data-fx="story-cta"]');
+      if (cta) cta.addEventListener('click', () => (window.fakeCtaTapped = true));
+    }
+
+    function prerender() {
+      for (const old of pageEl.querySelectorAll('[data-fx="prerendered"]')) old.remove();
+      if (params.get('prerender') !== '1' || reel + 1 >= phoneReels.length) return;
+      const next = build(reel + 1, 100);
+      next.setAttribute('data-fx', 'prerendered');
+      next.style.transition = 'none';
+    }
+
+    function show(direction) {
+      const old = section;
+      section = build(reel, direction ? direction * 100 : 0);
+      wire(section);
+      if (old) {
+        old.getBoundingClientRect(); // start the slide from where they are
+        section.getBoundingClientRect();
+        old.style.transform = `translateX(${-direction * 100}%)`;
+        section.style.transform = 'translateX(0%)';
+        setTimeout(() => old.remove(), 300);
+      }
+      prerender();
+      play();
+    }
+
+    function toReel(dir) {
+      const next = reel + dir;
+      if (!pageEl.isConnected || next < 0 || next >= phoneReels.length) return;
+      reel = next;
+      item = dir > 0 ? 0 : phoneReels[reel].items.length - 1;
+      fx.moves++;
+      history.replaceState({}, '', pathOf());
+      note();
+      show(dir);
+    }
+
+    // Next or previous part of this reel, or on to the next or previous reel.
+    function step(dir) {
+      if (!pageEl.isConnected) return;
+      const next = item + dir;
+      if (next < 0 || next >= phoneReels[reel].items.length) return toReel(dir);
+      item = next;
+      fx.moves++;
+      history.replaceState({}, '', pathOf());
+      note();
+      const v = video();
+      if (v) v.setAttribute('data-item', phoneReels[reel].items[item]); // the same header, another part
+      play();
+    }
+
+    note();
+    show(0);
+  }
+
   window.addEventListener('popstate', () => {
-    const story = document.querySelector('[data-fx="story-viewer"]');
+    const story = document.querySelector('[data-fx="story-viewer"], [data-fx="story-page"]');
     if (story) story.remove();
     else render();
   });
-  window.fake = { navigate, openStory, openStories: () => openStories(0), openStoryAd: () => openStories(1) };
+  window.fake = {
+    navigate, openStory, openStories: () => openStories(0), openStoryAd: () => openStories(1),
+    openPhoneStories: (reel) => openPhoneStories(reel),
+  };
   render();
 })();
